@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Month Planner</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  color: #333;
+  background: #f5f5f5;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header h1 {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.nav-btn {
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.nav-btn:hover { background: #eee; }
+
+.today-btn {
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 14px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.today-btn:hover { background: #1557b0; }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#settings-toggle {
+  background: none;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+#settings-toggle:hover { background: #eee; }
+
+#auth-btn {
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+#auth-btn:hover { background: #1557b0; }
+
+/* Settings Panel */
+.settings-panel {
+  display: none;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+  padding: 12px 20px;
+}
+
+.settings-panel.open { display: block; }
+
+.settings-panel h3 {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.calendar-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.calendar-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.cal-color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+/* Grid Container */
+.grid-container {
+  overflow-x: auto;
+  padding: 10px 20px 40px;
+}
+
+/* Month Grid Table */
+.month-grid {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 600px;
+  background: #fff;
+  border: 1px solid #ccc;
+}
+
+.month-grid th,
+.month-grid td {
+  border: 1px solid #ddd;
+  padding: 0;
+}
+
+/* Column headers area */
+.month-grid thead {
+  position: sticky;
+  top: 47px;
+  z-index: 50;
+}
+
+.month-grid thead tr.header-row {
+  height: 80px;
+}
+
+.month-grid thead th {
+  background: #fafafa;
+  vertical-align: bottom;
+  padding-bottom: 6px;
+  position: relative;
+  min-width: 40px;
+  width: 40px;
+}
+
+.month-grid thead th.date-header {
+  min-width: 90px;
+  width: 90px;
+  font-size: 11px;
+  text-align: right;
+  padding-right: 6px;
+  vertical-align: bottom;
+}
+
+.month-grid thead th.notes-header {
+  min-width: 160px;
+  width: 160px;
+  font-size: 11px;
+  text-align: left;
+  padding-left: 6px;
+  vertical-align: bottom;
+}
+
+.angled-header {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform-origin: bottom left;
+  transform: rotate(-45deg);
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Date column */
+.month-grid td.date-cell {
+  font-weight: 600;
+  text-align: right;
+  padding: 3px 6px;
+  white-space: nowrap;
+  font-size: 12px;
+  background: #fafafa;
+}
+
+/* Weekend shading */
+.month-grid tr.weekend td {
+  background: #f0f0f0;
+}
+
+.month-grid tr.weekend td.date-cell {
+  background: #e8e8e8;
+}
+
+/* Event cells */
+.month-grid td.event-cell {
+  position: relative;
+  height: 24px;
+  cursor: default;
+}
+
+.event-block {
+  position: absolute;
+  inset: 1px;
+  border-radius: 2px;
+  opacity: 0.85;
+}
+
+.event-block:hover {
+  opacity: 1;
+}
+
+/* Tooltip */
+.tooltip {
+  display: none;
+  position: fixed;
+  background: #333;
+  color: #fff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  max-width: 260px;
+  z-index: 1000;
+  pointer-events: none;
+  line-height: 1.4;
+}
+
+/* Notes column */
+.month-grid td.notes-cell {
+  padding: 0;
+}
+
+.notes-cell input {
+  width: 100%;
+  border: none;
+  outline: none;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  background: transparent;
+}
+
+.notes-cell input:focus {
+  background: #fffde7;
+}
+
+/* Legend */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding: 10px 20px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.legend-color {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+}
+
+/* Sign-in prompt */
+.sign-in-prompt {
+  text-align: center;
+  padding: 80px 20px;
+  color: #666;
+}
+
+.sign-in-prompt h2 {
+  font-size: 22px;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.sign-in-prompt p {
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+/* Loading */
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #888;
+}
+
+/* Print styles */
+@media print {
+  .header, .settings-panel, .legend, #auth-btn, #settings-toggle, .today-btn {
+    position: static;
+  }
+
+  .nav-btn, #auth-btn, #settings-toggle, .today-btn, .settings-panel {
+    display: none !important;
+  }
+
+  .month-grid thead {
+    position: static;
+  }
+
+  body { background: #fff; font-size: 11px; }
+
+  .grid-container { padding: 0; }
+
+  .month-grid {
+    border: 1px solid #999;
+    page-break-inside: auto;
+  }
+
+  .month-grid th, .month-grid td {
+    border-color: #999;
+  }
+
+  .notes-cell input {
+    border: none;
+    padding: 2px 4px;
+  }
+
+  .event-block { opacity: 1; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <button class="nav-btn" id="prev-btn">&larr;</button>
+    <h1 id="month-title"></h1>
+    <button class="nav-btn" id="next-btn">&rarr;</button>
+    <button class="today-btn" id="today-btn">Today</button>
+  </div>
+  <div class="header-right">
+    <button id="settings-toggle">Calendars</button>
+    <button id="auth-btn">Sign in with Google</button>
+  </div>
+</div>
+
+<div class="settings-panel" id="settings-panel">
+  <h3>Select calendars to display as columns:</h3>
+  <div class="calendar-checkboxes" id="calendar-checkboxes"></div>
+</div>
+
+<div id="main-content">
+  <div class="sign-in-prompt" id="sign-in-prompt">
+    <h2>Month Planner</h2>
+    <p>Sign in with your Google account to view your calendars in a vertical month grid.</p>
+  </div>
+</div>
+
+<div class="legend" id="legend"></div>
+<div class="tooltip" id="tooltip"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</body>
+</html>

@@ -7,5 +7,5 @@
 // 5. Create an OAuth 2.0 Client ID (type: Web application)
 // 6. Add http://localhost:8000 to "Authorized JavaScript origins"
 // 7. Copy the Client ID below
-const CLIENT_ID = 'YOUR_CLIENT_ID_HERE';
-const SCOPES = 'https://www.googleapis.com/auth/calendar.readonly';
+const CLIENT_ID = '883236080930-la69aafp1c2d0enrbr6ic44i5unksuqh.apps.googleusercontent.com';
+const SCOPES = 'https://www.googleapis.com/auth/calendar';

@@ -26,6 +26,8 @@ let HOLIDAY_CAL_IDS = new Set();
 // Reserved column opacity levels: click cycles through these
 const RESERVED_LEVELS = [0, 0.25, 0.50, 0.75, 1.0];
 const RESERVED_LABELS = ['', 'Planning', 'Considering', 'Confident', 'Reserved'];
+const RESERVED_COLORS = ['transparent', '#4CAF50', '#FFC107', '#FF9800', '#F44336']; // green→yellow→orange→red
+const RESERVED_TEXT_COLORS = ['#333', '#fff', '#333', '#fff', '#fff'];
 
 // ── DOM refs ──
 const monthTitle = document.getElementById('month-title');
@@ -102,6 +104,7 @@ function onTokenResponse(resp) {
   accessToken = resp.access_token;
   authBtn.textContent = 'Sign out';
   signInPrompt.style.display = 'none';
+  resyncBtn.style.display = 'inline-block';
   fetchCalendars();
 }
 
@@ -119,6 +122,7 @@ function signOut() {
   syncReady = false;
   updateSyncStatus('');
   authBtn.textContent = 'Sign in with Google';
+  resyncBtn.style.display = 'none';
   settingsPanel.classList.remove('open');
   calendarCheckboxes.innerHTML = '';
   legendEl.innerHTML = '';
@@ -351,6 +355,53 @@ todayBtn.onclick = () => {
   if (accessToken) loadMonth();
 };
 
+// Re-sync all reserved days to Google Calendar with current format
+const resyncBtn = document.getElementById('resync-btn');
+resyncBtn.onclick = async () => {
+  if (!syncReady || !syncCalId) return;
+  resyncBtn.disabled = true;
+  resyncBtn.textContent = 'Clearing old...';
+
+  // Step 1: Delete ALL sync events for the month (catches orphaned old-format events)
+  const timeMin = new Date(currentYear, currentMonth, 1).toISOString();
+  const timeMax = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59).toISOString();
+  const params = new URLSearchParams({
+    timeMin, timeMax, singleEvents: 'true', maxResults: '250',
+    privateExtendedProperty: 'mpApp=monthplanner',
+  });
+  const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(syncCalId)}/events?${params}`;
+  const data = await apiFetch(url);
+  if (data && data.items) {
+    for (let di = 0; di < data.items.length; di++) {
+      try {
+        await fetch(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(syncCalId)}/events/${encodeURIComponent(data.items[di].id)}`,
+          { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + accessToken } }
+        );
+      } catch(e) {}
+    }
+  }
+  // Clear local tracking
+  syncEventIds = {};
+
+  // Step 2: Create fresh events for all days with data
+  resyncBtn.textContent = 'Syncing...';
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(currentYear, currentMonth, day);
+    const dk = dateKey(date);
+    const reserved = parseInt(localStorage.getItem('mp_reserved_' + dk) || '0', 10);
+    const note = localStorage.getItem('mp_note_' + dk) || '';
+    const tripInfo = tripIdeaDates[dk];
+    if (reserved > 0 || note || (tripInfo && tripInfo.trips.length > 0)) {
+      await syncUpsertEvent(dk);
+    }
+  }
+  resyncBtn.disabled = false;
+  resyncBtn.textContent = 'Re-sync All';
+  updateSyncStatus('synced');
+};
+
 columnsToggle.onclick = () => {
   columnsPanel.classList.toggle('open');
   settingsPanel.classList.remove('open');
@@ -431,7 +482,8 @@ async function fetchSyncEvents(timeMin, timeMax) {
     const reserved = parseInt(props.mpReserved || '0', 10);
     const note = props.mpNote || '';
 
-    syncEventIds[dk] = ev.id;
+    if (!syncEventIds[dk]) syncEventIds[dk] = [];
+    syncEventIds[dk].push(ev.id);
 
     if (reserved > 0) {
       localStorage.setItem('mp_reserved_' + dk, reserved);
@@ -450,51 +502,62 @@ async function fetchSyncEvents(timeMin, timeMax) {
 }
 
 // ── Sync: write-through on edit ──
+// Creates one Google Calendar event per trip on a given day.
+// If no trips, creates a single event with the reserved label or manual note.
 async function syncUpsertEvent(dk) {
   if (!syncReady || !syncCalId) return;
   updateSyncStatus('saving');
 
-  const reserved = parseInt(localStorage.getItem('mp_reserved_' + dk) || '0', 10);
   const note = localStorage.getItem('mp_note_' + dk) || '';
+  const tripInfo = tripIdeaDates[dk];
 
-  if (reserved === 0 && !note) {
-    await syncDeleteEvent(dk);
+  if (!note && (!tripInfo || tripInfo.trips.length === 0)) {
+    await syncDeleteAllEvents(dk);
     return;
   }
 
-  let summary = '';
-  if (reserved > 0) summary = 'R' + reserved + ': ' + RESERVED_LABELS[reserved];
-  if (note) summary = summary ? summary + ' | ' + note.substring(0, 40) : 'Note';
+  // Build list of summaries — one per trip, each with its own % from title
+  const summaries = [];
+  if (tripInfo && tripInfo.trips.length > 0 && !note) {
+    // Sort: first day of event first, then last day, then middle days
+    tripInfo.trips.slice().sort(function(a, b) {
+      const aFirst = a.dayNum === 1 ? 0 : (a.dayNum === a.totalDays ? 1 : 2);
+      const bFirst = b.dayNum === 1 ? 0 : (b.dayNum === b.totalDays ? 1 : 2);
+      return aFirst - bFirst;
+    }).forEach(function(t) {
+      const dayLabel = '(' + t.dayNum + '/' + t.totalDays + ') ';
+      const tripMatch = t.title.match(/^trip ideas?\s*-\s*/i);
+      const desc = tripMatch ? t.title.substring(tripMatch[0].length) : t.title;
+      const cleanDesc = desc.replace(/\d+\s*%\s*/, '').trim();
+      const tripPct = Math.round(RESERVED_LEVELS[t.level] * 100) + '%';
+      summaries.push(tripPct + ' ' + dayLabel + cleanDesc);
+    });
+  } else if (note) {
+    const cleanNote = note.replace(/^trip ideas?\s*-\s*/i, '').replace(/\d+\s*%\s*/, '').trim();
+    summaries.push(cleanNote.substring(0, 60));
+  }
 
-  const eventBody = {
-    summary,
-    description: note || '',
-    start: { date: dk },
-    end: { date: nextDay(dk) },
-    extendedProperties: {
-      private: {
-        mpApp: 'monthplanner',
-        mpReserved: String(reserved),
-        mpNote: note,
+  // Delete old events for this day first, then create fresh ones
+  await syncDeleteAllEvents(dk);
+
+  const newIds = [];
+  for (let si = 0; si < summaries.length; si++) {
+    const eventBody = {
+      summary: summaries[si],
+      description: note || '',
+      start: { date: dk },
+      end: { date: nextDay(dk) },
+      extendedProperties: {
+        private: {
+          mpApp: 'monthplanner',
+          mpReserved: '0',
+          mpNote: note,
+        },
       },
-    },
-  };
+    };
 
-  const existingId = syncEventIds[dk];
-
-  try {
-    let resp;
-    if (existingId) {
-      resp = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(syncCalId)}/events/${encodeURIComponent(existingId)}`,
-        {
-          method: 'PATCH',
-          headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-          body: JSON.stringify(eventBody),
-        }
-      );
-    } else {
-      resp = await fetch(
+    try {
+      const resp = await fetch(
         `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(syncCalId)}/events`,
         {
           method: 'POST',
@@ -502,42 +565,45 @@ async function syncUpsertEvent(dk) {
           body: JSON.stringify(eventBody),
         }
       );
-    }
-
-    if (resp.ok) {
-      const ev = await resp.json();
-      syncEventIds[dk] = ev.id;
-      updateSyncStatus('synced');
-    } else {
-      console.error('Sync write failed:', resp.status, await resp.text());
-      updateSyncStatus('error');
-    }
-  } catch (err) {
-    console.error('Sync write error:', err);
-    updateSyncStatus('error');
-  }
-}
-
-async function syncDeleteEvent(dk) {
-  if (!syncReady || !syncCalId) return;
-  const existingId = syncEventIds[dk];
-  if (!existingId) { updateSyncStatus('synced'); return; }
-
-  try {
-    await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(syncCalId)}/events/${encodeURIComponent(existingId)}`,
-      {
-        method: 'DELETE',
-        headers: { 'Authorization': 'Bearer ' + accessToken },
+      if (resp.ok) {
+        const ev = await resp.json();
+        newIds.push(ev.id);
+      } else {
+        console.error('Sync write failed:', resp.status, await resp.text());
       }
-    );
-    delete syncEventIds[dk];
-    updateSyncStatus('synced');
-  } catch (err) {
-    console.error('Sync delete error:', err);
-    updateSyncStatus('error');
+    } catch (err) {
+      console.error('Sync write error:', err);
+    }
   }
+
+  syncEventIds[dk] = newIds;
+  updateSyncStatus(newIds.length > 0 ? 'synced' : 'error');
 }
+
+async function syncDeleteAllEvents(dk) {
+  if (!syncReady || !syncCalId) return;
+  const existingIds = syncEventIds[dk];
+  if (!existingIds || existingIds.length === 0) { updateSyncStatus('synced'); return; }
+
+  for (let i = 0; i < existingIds.length; i++) {
+    try {
+      await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(syncCalId)}/events/${encodeURIComponent(existingIds[i])}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': 'Bearer ' + accessToken },
+        }
+      );
+    } catch (err) {
+      console.error('Sync delete error:', err);
+    }
+  }
+  delete syncEventIds[dk];
+  updateSyncStatus('synced');
+}
+
+// Keep old name as alias for places that call syncDeleteEvent
+async function syncDeleteEvent(dk) { return syncDeleteAllEvents(dk); }
 
 function nextDay(dateStr) {
   const d = new Date(dateStr + 'T00:00:00');
@@ -590,37 +656,49 @@ async function loadMonth() {
     eventsCache[key] = calEvents;
   }
 
-  // Scan all events for "trip idea" → extract % for Reserved, note title on first day
-  tripIdeaDates = {};   // dk → { level: 1-4, title: string, isFirstDay: bool }
-  Object.values(calEvents).forEach(dateMap => {
+  // Scan all events for "trip idea" → extract day counter, per-trip per-day % levels
+  // tripIdeaDates[dk] = { level: max level of day, trips: [{title, tripKey, dayNum, totalDays, level}] }
+  // Each trip's % is stored per-day in localStorage: mp_trip_pct_{dk}_{tripKey}
+  // tripKey = cleaned event summary for consistent storage keys
+  tripIdeaDates = {};
+  Object.entries(calEvents).forEach(([calId, dateMap]) => {
+    if (calId === syncCalId) return;
     Object.entries(dateMap).forEach(([dk, events]) => {
       events.forEach(ev => {
         if (!ev.summary) return;
         if (!ev.summary.toLowerCase().includes('trip idea')) return;
 
-        // Parse percentage from anywhere in title (e.g. "trip ideas - 75%" or "50% trip idea Tokyo")
+        // Parse default % from title (used as initial value if no per-day override)
         const pctMatch = ev.summary.match(/(\d+)\s*%/);
-        let level = 1; // default 25% Planning
+        let defaultLevel = 1; // 25% Planning
         if (pctMatch) {
           const pct = parseInt(pctMatch[1], 10);
-          if (pct >= 100) level = 4;
-          else if (pct >= 75) level = 3;
-          else if (pct >= 50) level = 2;
-          else level = 1;
+          if (pct >= 100) defaultLevel = 4;
+          else if (pct >= 75) defaultLevel = 3;
+          else if (pct >= 50) defaultLevel = 2;
+          else defaultLevel = 1;
         }
 
-        // Determine if this is the first day of the event
-        const evStart = ev.start.date
-          ? ev.start.date
-          : ev.start.dateTime.split('T')[0];
-        const isFirstDay = (dk === evStart);
+        // Build a stable key from the event summary (strip % and "Trip Ideas -" prefix)
+        const tripKey = ev.summary.replace(/^trip ideas?\s*-\s*/i, '').replace(/\d+\s*%\s*/, '').trim().substring(0, 40);
 
-        // Keep highest level if multiple trip ideas on same day
-        if (!tripIdeaDates[dk] || level > tripIdeaDates[dk].level) {
-          tripIdeaDates[dk] = { level, title: ev.summary, isFirstDay };
-        } else if (isFirstDay && !tripIdeaDates[dk].isFirstDay) {
-          // Prefer the entry that is the first day for notes
-          tripIdeaDates[dk] = { level: Math.max(level, tripIdeaDates[dk].level), title: ev.summary, isFirstDay };
+        const evStart = ev.start.date ? ev.start.date : ev.start.dateTime.split('T')[0];
+        const evEnd = ev.end.date ? ev.end.date : ev.end.dateTime.split('T')[0];
+        const startDate = new Date(evStart + 'T00:00:00');
+        const endDate = new Date(evEnd + 'T00:00:00');
+        const totalDays = Math.max(1, Math.round((endDate - startDate) / 86400000));
+        const currentDate = new Date(dk + 'T00:00:00');
+        const dayNum = Math.round((currentDate - startDate) / 86400000) + 1;
+
+        // Use per-day stored level if available, otherwise use default from title
+        const storedLevel = localStorage.getItem('mp_trip_pct_' + dk + '_' + tripKey);
+        const level = storedLevel !== null ? parseInt(storedLevel, 10) : defaultLevel;
+
+        if (!tripIdeaDates[dk]) tripIdeaDates[dk] = { level: 0, trips: [] };
+        const isDup = tripIdeaDates[dk].trips.some(t => t.tripKey === tripKey);
+        if (!isDup) {
+          tripIdeaDates[dk].trips.push({ title: ev.summary, tripKey, dayNum, totalDays, level });
+          if (level > tripIdeaDates[dk].level) tripIdeaDates[dk].level = level;
         }
       });
     });
@@ -672,6 +750,27 @@ function indexEventsByDate(events, year, month) {
     }
   });
   return map;
+}
+
+// Build the trip note text for a given day's tripInfo
+function buildTripNoteText(tripInfo) {
+  if (!tripInfo || tripInfo.trips.length === 0) return '';
+  const sorted = tripInfo.trips.slice().sort(function(a, b) {
+    const aFirst = a.dayNum === 1 ? 0 : (a.dayNum === a.totalDays ? 1 : 2);
+    const bFirst = b.dayNum === 1 ? 0 : (b.dayNum === b.totalDays ? 1 : 2);
+    return aFirst - bFirst;
+  });
+  const stars = sorted.length > 1 ? '*'.repeat(sorted.length) + ' ' : '';
+  const parts = sorted.map(function(t) {
+    const dayLabel = '(' + t.dayNum + '/' + t.totalDays + ')';
+    const tripPct = Math.round(RESERVED_LEVELS[t.level] * 100) + '%';
+    const tripMatch = t.title.match(/^trip ideas?\s*-\s*/i);
+    const desc = tripMatch ? t.title.substring(tripMatch[0].length) : t.title;
+    const cleanDesc = desc.replace(/\d+\s*%\s*/, '').trim();
+    const prefix = tripMatch ? tripMatch[0] : '';
+    return prefix + tripPct + ' ' + dayLabel + ' ' + cleanDesc;
+  });
+  return stars + parts.join(' | ');
 }
 
 // ── Render Grid ──
@@ -750,12 +849,15 @@ function renderGrid(calendars, calEvents, holidayMaps) {
 
     orderedCols.forEach(col => {
       if (col.key === 'col_reserved') {
-        const savedLevel = localStorage.getItem('mp_reserved_' + dk);
-        let level = savedLevel !== null ? parseInt(savedLevel, 10) : (tripInfo ? tripInfo.level : 0);
+        // Auto-calculated from highest trip level on this day (read-only)
+        let level = tripInfo ? tripInfo.level : 0;
         const opacity = RESERVED_LEVELS[level];
         const label = RESERVED_LABELS[level];
-        html += `<td class="fixed-col reserved-cell" data-date="${dk}" data-level="${level}" data-tip="${label}" style="cursor:pointer">`;
-        if (opacity > 0) html += `<div class="reserved-block" style="background:rgba(0,0,0,${opacity})"></div>`;
+        const pct = Math.round(opacity * 100);
+        const bgColor = RESERVED_COLORS[level];
+        const txtColor = RESERVED_TEXT_COLORS[level];
+        html += `<td class="fixed-col reserved-cell" data-date="${dk}" data-level="${level}" data-tip="${label} (${pct}%)">`;
+        if (level > 0) html += `<div class="reserved-block" style="background:${bgColor};color:${txtColor};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;overflow:hidden;">${pct}%</div>`;
         html += '</td>';
       } else if (col.type === 'country') {
         const cc = countryByKey[col.key];
@@ -769,7 +871,9 @@ function renderGrid(calendars, calEvents, holidayMaps) {
       } else if (col.key === 'col_notes') {
         const manualNote = localStorage.getItem('mp_note_' + dk);
         let noteVal = manualNote || '';
-        if (!manualNote && tripInfo && tripInfo.isFirstDay) noteVal = tripInfo.title;
+        if (!manualNote && tripInfo && tripInfo.trips.length > 0) {
+          noteVal = buildTripNoteText(tripInfo);
+        }
         const isAuto = !manualNote && noteVal;
         const noteStyle = isAuto ? 'color:#999;font-style:italic' : 'color:#333';
         html += `<td class="notes-cell"><input type="text" value="${esc(noteVal)}" data-date="${dk}" data-manual="${manualNote ? '1' : '0'}" style="${noteStyle}" /></td>`;
@@ -798,111 +902,84 @@ function renderGrid(calendars, calEvents, holidayMaps) {
   mainContent.innerHTML = html;
 
   // Bind Reserved column — click to open picker popup with save
+  // Reserved column — click to set % per trip per day
   mainContent.querySelectorAll('.reserved-cell').forEach(cell => {
+    cell.style.cursor = 'pointer';
     cell.addEventListener('click', (e) => {
       e.stopPropagation();
       const old = document.getElementById('reserved-picker');
       if (old) old.remove();
 
       const dk = cell.dataset.date;
-      const currentLevel = parseInt(cell.dataset.level, 10);
       const tripInfo = tripIdeaDates[dk];
-      const autoLevel = tripInfo ? tripInfo.level : 0;
-      const hasSavedOverride = localStorage.getItem('mp_reserved_' + dk) !== null;
-      let selectedLevel = currentLevel;
+      if (!tripInfo || tripInfo.trips.length === 0) return;
 
       const picker = document.createElement('div');
       picker.id = 'reserved-picker';
       picker.className = 'reserved-picker';
 
-      // Info header: show auto-detected and current
-      const info = document.createElement('div');
-      info.className = 'picker-info';
-      const autoLabel = autoLevel > 0 ? RESERVED_LABELS[autoLevel] + ' (' + (RESERVED_LEVELS[autoLevel] * 100) + '%)' : 'None';
-      info.innerHTML = '<span style="color:#888">Auto: ' + autoLabel + '</span>';
-      if (hasSavedOverride) {
-        info.innerHTML += '<br><span style="color:#1a73e8">Saved: ' + RESERVED_LABELS[currentLevel] + '</span>';
-      }
-      picker.appendChild(info);
+      const header = document.createElement('div');
+      header.style.cssText = 'font-weight:600;margin-bottom:6px;font-size:12px;';
+      header.textContent = dk + ' — Set % per trip';
+      picker.appendChild(header);
 
-      const options = [
-        { lvl: 0, label: 'Clear', opacity: 0 },
-        { lvl: 1, label: 'Planning 25%', opacity: 0.25 },
-        { lvl: 2, label: 'Considering 50%', opacity: 0.50 },
-        { lvl: 3, label: 'Confident 75%', opacity: 0.75 },
-        { lvl: 4, label: 'Reserved 100%', opacity: 1.0 },
-      ];
+      tripInfo.trips.forEach(t => {
+        const row = document.createElement('div');
+        row.style.cssText = 'margin-bottom:8px;padding:4px;border:1px solid #eee;border-radius:4px;';
 
-      const buttons = [];
-      options.forEach(opt => {
-        const btn = document.createElement('button');
-        btn.className = 'picker-btn';
-        if (currentLevel === opt.lvl) btn.classList.add('picker-active');
-        const swatch = document.createElement('span');
-        swatch.className = 'picker-swatch';
-        swatch.style.background = opt.opacity > 0 ? `rgba(0,0,0,${opt.opacity})` : '#fff';
-        swatch.style.border = '1px solid #999';
-        btn.appendChild(swatch);
-        btn.appendChild(document.createTextNode(' ' + opt.label));
-        btn.onclick = (ev) => {
-          ev.stopPropagation();
-          selectedLevel = opt.lvl;
-          buttons.forEach(b => b.classList.remove('picker-selected'));
-          btn.classList.add('picker-selected');
-          saveBtn.disabled = false;
-          saveBtn.style.opacity = '1';
-        };
-        picker.appendChild(btn);
-        buttons.push(btn);
+        // Trip name (cleaned)
+        const label = document.createElement('div');
+        label.style.cssText = 'font-size:11px;color:#555;margin-bottom:4px;';
+        const cleanName = t.title.replace(/^trip ideas?\s*-\s*/i, '').replace(/\d+\s*%\s*/, '').trim();
+        label.textContent = '(' + t.dayNum + '/' + t.totalDays + ') ' + cleanName.substring(0, 50);
+        row.appendChild(label);
+
+        // Level buttons
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:3px;';
+        [
+          { lvl: 1, lbl: '25%' },
+          { lvl: 2, lbl: '50%' },
+          { lvl: 3, lbl: '75%' },
+          { lvl: 4, lbl: '100%' },
+        ].forEach(opt => {
+          const btn = document.createElement('button');
+          btn.style.cssText = 'padding:2px 8px;border:1px solid #ccc;border-radius:3px;font-size:10px;cursor:pointer;background:' + RESERVED_COLORS[opt.lvl] + ';color:' + RESERVED_TEXT_COLORS[opt.lvl] + ';';
+          if (t.level === opt.lvl) btn.style.outline = '2px solid #333';
+          btn.textContent = opt.lbl;
+          btn.onclick = (ev) => {
+            ev.stopPropagation();
+            // Save per-trip per-day level
+            localStorage.setItem('mp_trip_pct_' + dk + '_' + t.tripKey, opt.lvl);
+            t.level = opt.lvl;
+            // Recalculate day max level
+            let maxLvl = 0;
+            tripInfo.trips.forEach(tr => { if (tr.level > maxLvl) maxLvl = tr.level; });
+            tripInfo.level = maxLvl;
+            // Update reserved cell display
+            applyReservedLevel(cell, maxLvl);
+            // Update note display
+            const noteInput = mainContent.querySelector('.notes-cell input[data-date="' + dk + '"]');
+            if (noteInput && noteInput.dataset.manual === '0') {
+              noteInput.value = buildTripNoteText(tripInfo);
+              noteInput.style.color = '#999';
+              noteInput.style.fontStyle = 'italic';
+            }
+            // Sync to Google Calendar
+            syncUpsertEvent(dk);
+            picker.remove();
+          };
+          btnRow.appendChild(btn);
+        });
+        row.appendChild(btnRow);
+        picker.appendChild(row);
       });
 
-      // Action buttons row
-      const actions = document.createElement('div');
-      actions.className = 'picker-actions';
-
-      // Reset to auto button
-      if (hasSavedOverride && autoLevel !== currentLevel) {
-        const resetBtn = document.createElement('button');
-        resetBtn.className = 'picker-action-btn';
-        resetBtn.textContent = 'Reset to auto';
-        resetBtn.onclick = (ev) => {
-          ev.stopPropagation();
-          localStorage.removeItem('mp_reserved_' + dk);
-          applyReservedLevel(cell, autoLevel);
-          picker.remove();
-          syncUpsertEvent(dk);
-        };
-        actions.appendChild(resetBtn);
-      }
-
-      // Save button
-      const saveBtn = document.createElement('button');
-      saveBtn.className = 'picker-action-btn picker-save-btn';
-      saveBtn.textContent = 'Save';
-      saveBtn.disabled = true;
-      saveBtn.style.opacity = '0.4';
-      saveBtn.onclick = (ev) => {
-        ev.stopPropagation();
-        if (selectedLevel === 0) {
-          localStorage.removeItem('mp_reserved_' + dk);
-        } else {
-          localStorage.setItem('mp_reserved_' + dk, selectedLevel);
-        }
-        applyReservedLevel(cell, selectedLevel);
-        picker.remove();
-        syncUpsertEvent(dk);
-      };
-      actions.appendChild(saveBtn);
-
-      picker.appendChild(actions);
-
-      // Position near the cell
       const rect = cell.getBoundingClientRect();
       picker.style.top = (rect.bottom + window.scrollY + 2) + 'px';
       picker.style.left = (rect.left + window.scrollX) + 'px';
       document.body.appendChild(picker);
 
-      // Close on outside click (no save)
       setTimeout(() => {
         document.addEventListener('click', function closePicker() {
           picker.remove();
@@ -953,16 +1030,23 @@ function positionTooltip(e) {
 
 function applyReservedLevel(cell, lvl) {
   cell.dataset.level = lvl;
-  cell.dataset.tip = lvl > 0 ? RESERVED_LABELS[lvl] : '';
-  const opacity = RESERVED_LEVELS[lvl];
+  const pct = Math.round(RESERVED_LEVELS[lvl] * 100);
+  cell.dataset.tip = lvl > 0 ? RESERVED_LABELS[lvl] + ' (' + pct + '%)' : '';
   let block = cell.querySelector('.reserved-block');
-  if (opacity > 0) {
+  if (lvl > 0) {
     if (!block) {
       block = document.createElement('div');
       block.className = 'reserved-block';
       cell.appendChild(block);
     }
-    block.style.background = `rgba(0,0,0,${opacity})`;
+    block.style.background = RESERVED_COLORS[lvl];
+    block.style.color = RESERVED_TEXT_COLORS[lvl];
+    block.style.display = 'flex';
+    block.style.alignItems = 'center';
+    block.style.justifyContent = 'center';
+    block.style.fontSize = '8px';
+    block.style.fontWeight = '600';
+    block.textContent = pct + '%';
   } else if (block) {
     block.remove();
   }
@@ -973,17 +1057,17 @@ function renderLegend(calendars) {
 
   // Reserved legend
   const levels = [
-    { opacity: 0.25, label: 'Planning (25%)' },
-    { opacity: 0.50, label: 'Considering (50%)' },
-    { opacity: 0.75, label: 'Confident (75%)' },
-    { opacity: 1.0,  label: 'Reserved (100%)' },
+    { color: RESERVED_COLORS[1], textColor: RESERVED_TEXT_COLORS[1], label: 'Planning (25%)' },
+    { color: RESERVED_COLORS[2], textColor: RESERVED_TEXT_COLORS[2], label: 'Considering (50%)' },
+    { color: RESERVED_COLORS[3], textColor: RESERVED_TEXT_COLORS[3], label: 'Confident (75%)' },
+    { color: RESERVED_COLORS[4], textColor: RESERVED_TEXT_COLORS[4], label: 'Reserved (100%)' },
   ];
   levels.forEach(l => {
     const item = document.createElement('span');
     item.className = 'legend-item';
     const swatch = document.createElement('span');
     swatch.className = 'legend-color';
-    swatch.style.background = `rgba(0,0,0,${l.opacity})`;
+    swatch.style.background = l.color;
     item.appendChild(swatch);
     item.appendChild(document.createTextNode(' ' + l.label));
     legendEl.appendChild(item);

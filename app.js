@@ -10,6 +10,7 @@ let tripIdeaDates = {};       // "YYYY-MM-DD" → true (auto-detected from event
 let syncCalId = null;         // ID of the "Month Planner Sync" calendar
 let syncEventIds = {};        // "YYYY-MM-DD" → event ID on the sync calendar
 let syncReady = false;        // true once sync calendar is found/created
+let currentView = 'grid';    // 'grid' or 'gantt'
 
 // Country columns: name + possible Google Calendar ID patterns
 const COUNTRY_COLUMNS = [
@@ -400,6 +401,20 @@ resyncBtn.onclick = async () => {
   resyncBtn.disabled = false;
   resyncBtn.textContent = 'Re-sync All';
   updateSyncStatus('synced');
+};
+
+// View toggle
+const viewToggle = document.getElementById('view-toggle');
+viewToggle.onclick = () => {
+  currentView = currentView === 'grid' ? 'gantt' : 'grid';
+  viewToggle.textContent = currentView === 'grid' ? 'Gantt' : 'Grid';
+  if (accessToken) {
+    if (currentView === 'gantt') {
+      loadGantt();
+    } else {
+      loadMonth();
+    }
+  }
 };
 
 columnsToggle.onclick = () => {
@@ -1135,4 +1150,187 @@ function esc(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML.replace(/"/g, '&quot;');
+}
+
+// ── Gantt View ──
+// Shows trip events as horizontal bars across a 3-month timeline.
+// X-axis: days (1 month back, current month, 2 months ahead)
+// Y-axis: each unique trip event
+// Bars colored by per-trip per-day % level. Click to change %.
+
+async function loadGantt() {
+  mainContent.innerHTML = '<div class="loading">Loading Gantt view...</div>';
+
+  // Build date range: 1 month back to 2 months ahead
+  const today = new Date();
+  const startMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const endMonth = new Date(today.getFullYear(), today.getMonth() + 3, 0); // last day of month+2
+
+  const timeMin = startMonth.toISOString();
+  const timeMax = new Date(endMonth.getFullYear(), endMonth.getMonth(), endMonth.getDate(), 23, 59, 59).toISOString();
+
+  // Fetch events from all selected calendars
+  const selectedCals = allCalendars
+    .filter(c => selectedCalendarIds.includes(c.id))
+    .filter(c => !HOLIDAY_CAL_IDS.has(c.id) && !isHolidayCalendar(c));
+
+  const allTripEvents = [];
+  await Promise.all(selectedCals.map(async cal => {
+    if (cal.id === syncCalId) return;
+    const events = await fetchEvents(cal.id, timeMin, timeMax);
+    events.forEach(ev => {
+      if (!ev.summary) return;
+      if (!ev.summary.toLowerCase().includes('trip idea')) return;
+      allTripEvents.push(ev);
+    });
+  }));
+
+  renderGantt(allTripEvents, startMonth, endMonth, today);
+}
+
+function renderGantt(tripEvents, startDate, endDate, today) {
+  // Build list of all days in range
+  const days = [];
+  const d = new Date(startDate);
+  while (d <= endDate) {
+    days.push(new Date(d));
+    d.setDate(d.getDate() + 1);
+  }
+  const totalDays = days.length;
+
+  // Build unique trips: group by cleaned title (dedup multi-day same event)
+  const tripMap = {}; // tripKey → { title, tripKey, startDk, endDk, days: Set of dk }
+  tripEvents.forEach(ev => {
+    const tripMatch = ev.summary.match(/^trip ideas?\s*-\s*/i);
+    const desc = tripMatch ? ev.summary.substring(tripMatch[0].length) : ev.summary;
+    const tripKey = desc.replace(/\d+\s*%\s*/, '').trim().substring(0, 40);
+
+    const evStart = ev.start.date || ev.start.dateTime.split('T')[0];
+    const evEnd = ev.end.date || ev.end.dateTime.split('T')[0];
+    const s = new Date(evStart + 'T00:00:00');
+    const e = new Date(evEnd + 'T00:00:00');
+
+    if (!tripMap[tripKey]) {
+      tripMap[tripKey] = { title: ev.summary, tripKey, startDk: evStart, endDk: evEnd, days: new Set() };
+    }
+
+    // Expand all days of this event
+    const cur = new Date(s);
+    while (cur < e) {
+      tripMap[tripKey].days.add(dateKey(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    // Update start/end bounds
+    if (evStart < tripMap[tripKey].startDk) tripMap[tripKey].startDk = evStart;
+    if (evEnd > tripMap[tripKey].endDk) tripMap[tripKey].endDk = evEnd;
+  });
+
+  const trips = Object.values(tripMap).sort((a, b) => a.startDk.localeCompare(b.startDk));
+  const todayDk = dateKey(today);
+  const dayNames = ['S','M','T','W','T','F','S'];
+
+  let html = '<div class="gantt-container"><div class="gantt-chart">';
+
+  // Header row: month labels + day numbers
+  html += '<div class="gantt-header">';
+  html += '<div class="gantt-label-col">Trip</div>';
+  html += '<div class="gantt-timeline">';
+  let prevMonth = -1;
+  days.forEach((day, i) => {
+    const m = day.getMonth();
+    const dow = day.getDay();
+    const isToday = dateKey(day) === todayDk;
+    const isWeekend = dow === 0 || dow === 6;
+    const isMonthStart = day.getDate() === 1;
+    let cls = 'gantt-day-header';
+    if (isWeekend) cls += ' weekend';
+    if (isToday) cls += ' today';
+    if (isMonthStart) cls += ' month-start';
+    // Show month name on 1st
+    let monthLabel = '';
+    if (m !== prevMonth) {
+      const mName = day.toLocaleDateString('en-US', { month: 'short' });
+      monthLabel = '<span class="gantt-month-label" style="left:0">' + mName + '</span>';
+      prevMonth = m;
+    }
+    html += '<div class="' + cls + '" style="position:relative">' + monthLabel + '<div>' + day.getDate() + '</div><div>' + dayNames[dow] + '</div></div>';
+  });
+  html += '</div></div>';
+
+  // Trip rows
+  trips.forEach(trip => {
+    const cleanName = trip.title.replace(/^trip ideas?\s*-\s*/i, '').replace(/\d+\s*%\s*/, '').trim();
+    html += '<div class="gantt-row">';
+    html += '<div class="gantt-row-label" title="' + esc(cleanName) + '">' + esc(cleanName.substring(0, 30)) + '</div>';
+    html += '<div class="gantt-row-timeline">';
+
+    days.forEach(day => {
+      const dk = dateKey(day);
+      const isInTrip = trip.days.has(dk);
+      const dow = day.getDay();
+      const isWeekend = dow === 0 || dow === 6;
+
+      if (isInTrip) {
+        // Get per-trip per-day level
+        const storedLevel = localStorage.getItem('mp_trip_pct_' + dk + '_' + trip.tripKey);
+
+        // Parse default from title
+        const pctMatch = trip.title.match(/(\d+)\s*%/);
+        let defaultLevel = 1;
+        if (pctMatch) {
+          const pct = parseInt(pctMatch[1], 10);
+          if (pct >= 100) defaultLevel = 4;
+          else if (pct >= 75) defaultLevel = 3;
+          else if (pct >= 50) defaultLevel = 2;
+        }
+
+        const level = storedLevel !== null ? parseInt(storedLevel, 10) : defaultLevel;
+        const pctVal = Math.round(RESERVED_LEVELS[level] * 100);
+        const bgColor = RESERVED_COLORS[level];
+        const txtColor = RESERVED_TEXT_COLORS[level];
+
+        html += '<div class="gantt-cell' + (isWeekend ? ' weekend' : '') + '" data-dk="' + dk + '" data-tripkey="' + esc(trip.tripKey) + '" data-level="' + level + '" data-title="' + esc(cleanName) + '">';
+        html += '<div class="gantt-bar" style="background:' + bgColor + ';color:' + txtColor + '">' + pctVal + '%</div>';
+        html += '</div>';
+      } else {
+        html += '<div class="gantt-cell' + (isWeekend ? ' weekend' : '') + '"></div>';
+      }
+    });
+
+    html += '</div></div>';
+  });
+
+  // Today line
+  const todayIdx = days.findIndex(d => dateKey(d) === todayDk);
+  if (todayIdx >= 0) {
+    const leftPct = ((todayIdx + 0.5) / totalDays * 100);
+    html += '<div class="gantt-today-line" style="left:calc(200px + ' + leftPct + '% * (100% - 200px) / 100)"></div>';
+  }
+
+  html += '</div></div>';
+  mainContent.innerHTML = html;
+
+  // Bind click handlers for % editing
+  mainContent.querySelectorAll('.gantt-cell[data-tripkey]').forEach(cell => {
+    cell.addEventListener('click', () => {
+      const dk = cell.dataset.dk;
+      const tripKey = cell.dataset.tripkey;
+      const currentLevel = parseInt(cell.dataset.level, 10);
+      // Cycle: 1→2→3→4→1
+      const nextLevel = currentLevel >= 4 ? 1 : currentLevel + 1;
+
+      localStorage.setItem('mp_trip_pct_' + dk + '_' + tripKey, nextLevel);
+
+      // Update bar display
+      const bar = cell.querySelector('.gantt-bar');
+      const pctVal = Math.round(RESERVED_LEVELS[nextLevel] * 100);
+      bar.style.background = RESERVED_COLORS[nextLevel];
+      bar.style.color = RESERVED_TEXT_COLORS[nextLevel];
+      bar.textContent = pctVal + '%';
+      cell.dataset.level = nextLevel;
+
+      // Sync to Google Calendar
+      syncUpsertEvent(dk);
+    });
+  });
 }

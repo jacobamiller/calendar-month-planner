@@ -133,7 +133,6 @@ body {
 .grid-container {
   overflow: auto;
   padding: 10px 20px 8px;
-  height: calc(100vh - 50px);
 }
 
 /* Month Grid Table */
@@ -388,19 +387,21 @@ body {
 /* Reserved column */
 .reserved-cell {
   position: relative;
-  height: 24px;
+  height: 20px;
+  padding: 0 !important;
 }
 
 .reserved-block {
   position: absolute;
-  inset: 1px;
+  inset: 2px;
   border-radius: 2px;
 }
 
 /* Holiday column */
 .holiday-cell {
   position: relative;
-  height: 24px;
+  height: 20px;
+  padding: 0 !important;
 }
 
 .holiday-block {
@@ -535,6 +536,7 @@ body {
 
 .gantt-chart {
   position: relative;
+  width: max-content;
   min-width: 100%;
 }
 
@@ -560,6 +562,7 @@ body {
   left: 0;
   background: #fafafa;
   z-index: 15;
+  box-shadow: 2px 0 4px rgba(0,0,0,0.05);
 }
 
 .gantt-timeline {
@@ -615,6 +618,7 @@ body {
   left: 0;
   background: #fff;
   z-index: 15;
+  box-shadow: 2px 0 4px rgba(0,0,0,0.05);
 }
 
 .gantt-row-label.trip-label {
@@ -700,23 +704,44 @@ body {
 }
 
 .gantt-row.holiday-row {
-  min-height: 14px;
+  min-height: 12px;
 }
 
 .gantt-row.holiday-row .gantt-row-label {
   font-size: 9px;
-  padding: 1px 8px;
+  padding: 0 8px;
 }
 
 .gantt-row.holiday-row .gantt-cell {
-  min-height: 14px;
+  min-height: 12px;
+  border-right: none;
 }
+
 
 .gantt-holiday-dot {
   position: absolute;
-  inset: 1px 2px;
-  border-radius: 2px;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: -1px;
+  border-radius: 0;
   background: #e53935;
+}
+
+.gantt-holiday-first {
+  left: 1px;
+  border-radius: 2px 0 0 2px;
+}
+
+.gantt-holiday-last {
+  right: 1px;
+  border-radius: 0 2px 2px 0;
+}
+
+.gantt-holiday-single {
+  left: 1px;
+  right: 1px;
+  border-radius: 2px;
 }
 
 .gantt-separator {

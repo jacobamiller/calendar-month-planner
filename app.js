@@ -1779,7 +1779,7 @@ function renderAddTripForm() {
     <div class="trip-form">
       <h2>Add Trip Idea</h2>
       <label>Trip Name</label>
-      <input type="text" id="trip-name" placeholder="e.g. Visit Jared in Bangkok">
+      <input type="text" id="trip-name" placeholder="e.g. Visit John in Bangkok">
       <div class="form-row">
         <div>
           <label>Start Date</label>
@@ -1811,7 +1811,7 @@ function renderAddTripForm() {
       </div>
       <input type="text" id="trip-location-custom" placeholder="City, Country" style="display:none;margin-top:4px;">
       <label>Who (optional)</label>
-      <input type="text" id="trip-who" placeholder="e.g. Jared Stevens">
+      <input type="text" id="trip-who" placeholder="e.g. John Doe">
       <label>Type</label>
       <div class="type-btns" id="trip-type-btns">
         ${TRIP_TYPES.map((t, i) => '<button class="type-btn' + (i === 0 ? ' active' : '') + '" data-type="' + esc(t) + '">' + esc(t) + '</button>').join('')}
@@ -1955,7 +1955,7 @@ function renderAddTripForm() {
       return;
     }
 
-    // Build event summary: "Trip Ideas - 25% Visit Jared in Bangkok"
+    // Build event summary: "Trip Ideas - 25% Visit John in Bangkok"
     const summary = 'Trip Ideas - ' + selectedPct + '% ' + name;
 
     // Build description with structured data
@@ -2147,26 +2147,61 @@ async function renderSummaryList() {
       // Build trip key for per-day % lookup
       const tripKey = trip.cleanName.substring(0, 40);
 
+      // Parse existing location into country/city
+      let editCountry = '', editCity = '';
+      if (trip.location && trip.location.includes(',')) {
+        const parts = trip.location.split(',').map(s => s.trim());
+        editCity = parts[0];
+        editCountry = parts[1] || '';
+      }
+      // Try to match country from LOCATIONS
+      let matchedCountry = LOCATIONS.find(l => l.country === editCountry);
+
+      // Build country options
+      let editCountryOpts = '<option value="">Select country...</option>';
+      LOCATIONS.forEach(loc => {
+        editCountryOpts += '<option value="' + esc(loc.country) + '"' + (loc.country === editCountry ? ' selected' : '') + '>' + esc(loc.country) + '</option>';
+      });
+      editCountryOpts += '<option value="__custom__"' + (!matchedCountry && editCountry ? ' selected' : '') + '>Other</option>';
+
+      // Build city options for matched country
+      let editCityOpts = '<option value="">Select city...</option>';
+      if (matchedCountry) {
+        matchedCountry.cities.forEach(c => {
+          editCityOpts += '<option value="' + esc(c) + '"' + (c === editCity ? ' selected' : '') + '>' + esc(c) + '</option>';
+        });
+        editCityOpts += '<option value="__custom__">Other city...</option>';
+      }
+
       // Editable fields
+      const lbl = 'display:block;font-size:10px;color:#888;margin:8px 0 2px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;';
+      const inp = 'width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;';
       let phtml = '<div style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px;">Edit Trip</div>';
-      phtml += '<label style="display:block;font-size:10px;color:#888;margin:8px 0 2px;">Name</label>';
-      phtml += '<input id="edit-name" value="' + esc(trip.cleanName) + '" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;">';
+      phtml += '<label style="' + lbl + '">Name</label>';
+      phtml += '<input id="edit-name" value="' + esc(trip.cleanName) + '" style="' + inp + '">';
       phtml += '<div style="display:flex;gap:8px;">';
-      phtml += '<div style="flex:1;"><label style="display:block;font-size:10px;color:#888;margin:6px 0 2px;">Location</label>';
-      phtml += '<input id="edit-location" value="' + esc(trip.location) + '" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;"></div>';
-      phtml += '<div style="flex:1;"><label style="display:block;font-size:10px;color:#888;margin:6px 0 2px;">Who</label>';
-      phtml += '<input id="edit-who" value="' + esc(trip.who) + '" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;"></div>';
+      phtml += '<div style="flex:1;"><label style="' + lbl + '">Country</label>';
+      phtml += '<select id="edit-country" style="' + inp + '">' + editCountryOpts + '</select></div>';
+      phtml += '<div style="flex:1;"><label style="' + lbl + '">City</label>';
+      phtml += '<select id="edit-city" style="' + inp + '"' + (!matchedCountry ? ' disabled' : '') + '>' + editCityOpts + '</select></div>';
       phtml += '</div>';
+      phtml += '<input id="edit-location-custom" value="' + esc(!matchedCountry && trip.location ? trip.location : '') + '" placeholder="City, Country" style="' + inp + 'margin-top:4px;display:' + (!matchedCountry && editCountry ? 'block' : 'none') + ';">';
       phtml += '<div style="display:flex;gap:8px;">';
-      phtml += '<div style="flex:1;"><label style="display:block;font-size:10px;color:#888;margin:6px 0 2px;">Type</label>';
-      phtml += '<select id="edit-type" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;">';
-      TRIP_TYPES.forEach(t => { phtml += '<option' + (t === trip.type ? ' selected' : '') + '>' + esc(t) + '</option>'; });
-      phtml += '</select></div>';
-      phtml += '<div style="flex:1;"><label style="display:block;font-size:10px;color:#888;margin:6px 0 2px;">Dates</label>';
+      phtml += '<div style="flex:1;"><label style="' + lbl + '">Who</label>';
+      phtml += '<input id="edit-who" value="' + esc(trip.who) + '" style="' + inp + '"></div>';
+      phtml += '<div style="flex:1;"><label style="' + lbl + '">Dates</label>';
       phtml += '<div style="font-size:12px;padding:8px 0;color:#555;">' + trip.startDk + ' → ' + trip.endDk + ' (' + trip.days + 'd)</div></div>';
       phtml += '</div>';
-      phtml += '<label style="display:block;font-size:10px;color:#888;margin:6px 0 2px;">Notes</label>';
-      phtml += '<textarea id="edit-notes" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;height:40px;resize:vertical;">' + esc(trip.notes) + '</textarea>';
+      phtml += '<label style="' + lbl + '">Type</label>';
+      phtml += '<div style="display:flex;gap:4px;flex-wrap:wrap;" id="edit-type-btns">';
+      TRIP_TYPES.forEach(t => {
+        phtml += '<button class="edit-type-btn" data-type="' + esc(t) + '" style="padding:5px 10px;border:2px solid ' + (t === trip.type ? '#333' : '#e0e0e0') + ';border-radius:14px;background:#fff;cursor:pointer;font-size:11px;">' + esc(t) + '</button>';
+      });
+      phtml += '<button class="edit-type-btn" data-type="__other__" style="padding:5px 10px;border:2px solid ' + (TRIP_TYPES.indexOf(trip.type) === -1 && trip.type ? '#333' : '#e0e0e0') + ';border-radius:14px;background:#fff;cursor:pointer;font-size:11px;font-style:italic;">Other...</button>';
+      phtml += '</div>';
+      phtml += '<input id="edit-type-custom" value="' + esc(TRIP_TYPES.indexOf(trip.type) === -1 ? trip.type : '') + '" placeholder="Custom type" style="' + inp + 'margin-top:4px;display:' + (TRIP_TYPES.indexOf(trip.type) === -1 && trip.type ? 'block' : 'none') + ';">';
+      phtml += '<label style="' + lbl + '">Notes</label>';
+      phtml += '<textarea id="edit-notes" style="' + inp + 'height:40px;resize:vertical;">' + esc(trip.notes) + '</textarea>';
 
       // Overall likelihood
       phtml += '<label style="display:block;font-size:10px;color:#888;margin:8px 0 4px;">Overall Likelihood</label>';
@@ -2232,6 +2267,52 @@ async function renderSummaryList() {
         loadGantt();
       };
 
+      // Country → City cascade in edit popup
+      const editCountryEl = popup.querySelector('#edit-country');
+      const editCityEl = popup.querySelector('#edit-city');
+      const editLocCustom = popup.querySelector('#edit-location-custom');
+      editCountryEl.onchange = () => {
+        const c = editCountryEl.value;
+        if (c === '__custom__') {
+          editCityEl.style.display = 'none';
+          editLocCustom.style.display = 'block';
+          editLocCustom.focus();
+          return;
+        }
+        editCityEl.style.display = '';
+        editLocCustom.style.display = 'none';
+        editCityEl.disabled = !c;
+        editCityEl.innerHTML = '<option value="">Select city...</option>';
+        if (c) {
+          const loc = LOCATIONS.find(l => l.country === c);
+          if (loc) loc.cities.forEach(ci => { editCityEl.innerHTML += '<option value="' + esc(ci) + '">' + esc(ci) + '</option>'; });
+          editCityEl.innerHTML += '<option value="__custom__">Other city...</option>';
+        }
+      };
+      editCityEl.onchange = () => {
+        if (editCityEl.value === '__custom__') { editLocCustom.style.display = 'block'; editLocCustom.placeholder = 'City name'; editLocCustom.focus(); }
+        else { editLocCustom.style.display = 'none'; }
+      };
+
+      // Type buttons in edit
+      let editSelectedType = trip.type;
+      const editTypeCustom = popup.querySelector('#edit-type-custom');
+      popup.querySelector('#edit-type-btns').addEventListener('click', (ev) => {
+        const btn = ev.target.closest('.edit-type-btn');
+        if (!btn) return;
+        if (btn.dataset.type === '__other__') {
+          editTypeCustom.style.display = 'block';
+          editTypeCustom.focus();
+          editSelectedType = editTypeCustom.value;
+        } else {
+          editSelectedType = btn.dataset.type;
+          editTypeCustom.style.display = 'none';
+        }
+        popup.querySelectorAll('.edit-type-btn').forEach(b => b.style.borderColor = '#e0e0e0');
+        btn.style.borderColor = '#333';
+      });
+      editTypeCustom.oninput = () => { editSelectedType = editTypeCustom.value.trim(); };
+
       // Overall % buttons — highlight selected
       popup.querySelectorAll('.edit-overall-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2257,9 +2338,14 @@ async function renderSummaryList() {
       // Save button — update Google Calendar event
       popup.querySelector('#edit-save').onclick = async () => {
         const newName = popup.querySelector('#edit-name').value.trim();
-        const newLocation = popup.querySelector('#edit-location').value.trim();
+        const eCountry = editCountryEl.value === '__custom__' ? '' : editCountryEl.value;
+        const eCity = editCityEl.value === '__custom__' ? editLocCustom.value.trim() : editCityEl.value;
+        let newLocation = '';
+        if (editCountryEl.value === '__custom__') { newLocation = editLocCustom.value.trim(); }
+        else if (eCity && eCountry) { newLocation = eCity + ', ' + eCountry; }
+        else if (eCountry) { newLocation = eCountry; }
         const newWho = popup.querySelector('#edit-who').value.trim();
-        const newType = popup.querySelector('#edit-type').value;
+        const newType = editSelectedType;
         const newNotes = popup.querySelector('#edit-notes').value.trim();
         const statusEl = popup.querySelector('#edit-status');
 

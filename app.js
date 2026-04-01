@@ -504,12 +504,19 @@ document.getElementById('summary-btn').onclick = () => {
   if (accessToken) renderSummaryList();
 };
 
-// Default view setting
+// Default view setting — synced between header dropdown and settings panel
 const defaultViewSelect = document.getElementById('default-view-select');
-defaultViewSelect.value = localStorage.getItem('mp_defaultView') || 'grid';
-defaultViewSelect.onchange = () => {
-  localStorage.setItem('mp_defaultView', defaultViewSelect.value);
-};
+const defaultViewHeader = document.getElementById('default-view-header');
+const savedDefault = localStorage.getItem('mp_defaultView') || 'grid';
+defaultViewSelect.value = savedDefault;
+defaultViewHeader.value = savedDefault;
+function onDefaultViewChange(val) {
+  localStorage.setItem('mp_defaultView', val);
+  defaultViewSelect.value = val;
+  defaultViewHeader.value = val;
+}
+defaultViewSelect.onchange = () => onDefaultViewChange(defaultViewSelect.value);
+defaultViewHeader.onchange = () => onDefaultViewChange(defaultViewHeader.value);
 
 // Legend toggle
 const legendToggle = document.getElementById('legend-toggle');

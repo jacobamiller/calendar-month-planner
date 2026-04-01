@@ -37,7 +37,7 @@ const LOCATIONS = [
   { country: 'Indonesia', cities: ['Jakarta', 'Bali'] },
 ];
 
-const TRIP_TYPES = ['My Trip', 'Friend Visit', 'Client Visit', 'Event', 'Conference'];
+const TRIP_TYPES = ['My Trip', 'Friend Visit', 'Client Visit', 'Event', 'Conference', 'Hash Run'];
 
 // Trip Ideas calendar ID — found at runtime
 let tripIdeasCalId = null;
@@ -1755,6 +1755,12 @@ function renderAddTripForm() {
     locationOptions += '</optgroup>';
   });
 
+  // Build country-only options for first dropdown
+  let countryOptions = '';
+  LOCATIONS.forEach(loc => {
+    countryOptions += '<option value="' + esc(loc.country) + '">' + esc(loc.country) + '</option>';
+  });
+
   mainContent.innerHTML = `
     <div class="trip-form">
       <h2>Add Trip Idea</h2>
@@ -1769,20 +1775,35 @@ function renderAddTripForm() {
           <label>End Date</label>
           <input type="date" id="trip-end">
         </div>
+        <div style="flex:0;min-width:50px;display:flex;align-items:flex-end;">
+          <span id="trip-day-count" style="font-size:13px;font-weight:600;color:#555;padding:10px 0;"></span>
+        </div>
       </div>
-      <label>Location</label>
-      <select id="trip-location">
-        <option value="">Select city...</option>
-        ${locationOptions}
-        <option value="__custom__">Other (type below)</option>
-      </select>
+      <div class="form-row">
+        <div>
+          <label>Country</label>
+          <select id="trip-country">
+            <option value="">Select country...</option>
+            ${countryOptions}
+            <option value="__custom__">Other</option>
+          </select>
+        </div>
+        <div>
+          <label>City</label>
+          <select id="trip-city" disabled>
+            <option value="">Select country first...</option>
+          </select>
+        </div>
+      </div>
       <input type="text" id="trip-location-custom" placeholder="City, Country" style="display:none;margin-top:4px;">
       <label>Who (optional)</label>
       <input type="text" id="trip-who" placeholder="e.g. Jared Stevens">
       <label>Type</label>
       <div class="type-btns" id="trip-type-btns">
         ${TRIP_TYPES.map((t, i) => '<button class="type-btn' + (i === 0 ? ' active' : '') + '" data-type="' + esc(t) + '">' + esc(t) + '</button>').join('')}
+        <button class="type-btn" data-type="__other__" style="font-style:italic;">Other...</button>
       </div>
+      <input type="text" id="trip-type-custom" placeholder="Custom type" style="display:none;margin-top:4px;">
       <label>Likelihood</label>
       <div class="type-btns" id="trip-pct-btns">
         <button class="type-btn active" data-pct="25" style="background:#4CAF50;color:#fff;border-color:#4CAF50;">25%</button>
@@ -1797,21 +1818,78 @@ function renderAddTripForm() {
     </div>
   `;
 
-  // Location custom toggle
-  const locSelect = document.getElementById('trip-location');
+  // Country → City cascade
+  const countrySelect = document.getElementById('trip-country');
+  const citySelect = document.getElementById('trip-city');
   const locCustom = document.getElementById('trip-location-custom');
-  locSelect.onchange = () => {
-    locCustom.style.display = locSelect.value === '__custom__' ? 'block' : 'none';
+  countrySelect.onchange = () => {
+    const country = countrySelect.value;
+    if (country === '__custom__') {
+      citySelect.style.display = 'none';
+      locCustom.style.display = 'block';
+      locCustom.placeholder = 'City, Country';
+      locCustom.focus();
+      return;
+    }
+    citySelect.style.display = '';
+    locCustom.style.display = 'none';
+    citySelect.disabled = !country;
+    citySelect.innerHTML = '<option value="">Select city...</option>';
+    if (country) {
+      const loc = LOCATIONS.find(l => l.country === country);
+      if (loc) {
+        loc.cities.forEach(city => {
+          citySelect.innerHTML += '<option value="' + esc(city) + '">' + esc(city) + '</option>';
+        });
+      }
+      citySelect.innerHTML += '<option value="__custom__">Other city...</option>';
+    }
   };
+  citySelect.onchange = () => {
+    if (citySelect.value === '__custom__') {
+      locCustom.style.display = 'block';
+      locCustom.placeholder = 'City name';
+      locCustom.focus();
+    } else {
+      locCustom.style.display = 'none';
+    }
+  };
+
+  // Day count display
+  const tripStart = document.getElementById('trip-start');
+  const tripEnd = document.getElementById('trip-end');
+  const dayCountEl = document.getElementById('trip-day-count');
+  function updateDayCount() {
+    if (tripStart.value && tripEnd.value) {
+      const s = new Date(tripStart.value + 'T00:00:00');
+      const e = new Date(tripEnd.value + 'T00:00:00');
+      const days = Math.max(1, Math.round((e - s) / 86400000) + 1);
+      dayCountEl.textContent = days + 'd';
+    } else {
+      dayCountEl.textContent = '';
+    }
+  }
+  tripStart.onchange = updateDayCount;
+  tripEnd.onchange = updateDayCount;
 
   // Type buttons
   let selectedType = TRIP_TYPES[0];
+  const typeCustom = document.getElementById('trip-type-custom');
   document.getElementById('trip-type-btns').addEventListener('click', (e) => {
-    if (!e.target.dataset.type) return;
-    selectedType = e.target.dataset.type;
+    const btn = e.target.closest('.type-btn');
+    if (!btn || !btn.dataset.type) return;
+    if (btn.dataset.type === '__other__') {
+      typeCustom.style.display = 'block';
+      typeCustom.focus();
+      selectedType = '';
+    } else {
+      selectedType = btn.dataset.type;
+      typeCustom.style.display = 'none';
+    }
     document.querySelectorAll('#trip-type-btns .type-btn').forEach(b => b.classList.remove('active'));
-    e.target.classList.add('active');
+    btn.classList.add('active');
   });
+  typeCustom.oninput = () => { selectedType = typeCustom.value.trim(); };
 
   // Pct buttons
   let selectedPct = 25;
@@ -1827,13 +1905,32 @@ function renderAddTripForm() {
     const name = document.getElementById('trip-name').value.trim();
     const start = document.getElementById('trip-start').value;
     const end = document.getElementById('trip-end').value;
-    const location = locSelect.value === '__custom__' ? locCustom.value.trim() : locSelect.value;
+    const country = countrySelect.value === '__custom__' ? '' : countrySelect.value;
+    const city = citySelect.value === '__custom__' ? locCustom.value.trim() : citySelect.value;
+    let location = '';
+    if (countrySelect.value === '__custom__') {
+      location = locCustom.value.trim();
+      if (location && !location.includes(',')) {
+        document.getElementById('trip-status').textContent = 'Custom location must be "City, Country"';
+        document.getElementById('trip-status').style.color = '#dc3545';
+        return;
+      }
+    } else if (city && country) {
+      location = city + ', ' + country;
+    } else if (country) {
+      location = country;
+    }
     const who = document.getElementById('trip-who').value.trim();
     const notes = document.getElementById('trip-notes').value.trim();
     const status = document.getElementById('trip-status');
 
     if (!name || !start || !end) {
       status.textContent = 'Please fill in name, start and end dates.';
+      status.style.color = '#dc3545';
+      return;
+    }
+    if (!location) {
+      status.textContent = 'Please select a location.';
       status.style.color = '#dc3545';
       return;
     }
@@ -1969,17 +2066,25 @@ async function renderSummaryList() {
   // Sort by start date
   trips.sort((a, b) => a.startDk.localeCompare(b.startDk));
 
+  // Split into future and past
+  const todayDk = dateKey(new Date());
+  const futureTrips = trips.filter(t => t.endDk >= todayDk);
+  const pastTrips = trips.filter(t => t.endDk < todayDk);
+
   // Get unique types for filter buttons
   const types = ['All'];
   trips.forEach(t => { if (t.type && types.indexOf(t.type) === -1) types.push(t.type); });
 
   let html = '<div class="summary-container">';
   html += '<div class="summary-header">';
-  html += '<h2>Trips (' + trips.length + ')</h2>';
+  html += '<h2>Trips (' + futureTrips.length + ' upcoming' + (pastTrips.length > 0 ? ', ' + pastTrips.length + ' past' : '') + ')</h2>';
   html += '<div class="summary-filters">';
   types.forEach(t => {
     html += '<button class="summary-filter-btn' + (t === 'All' ? ' active' : '') + '" data-filter="' + esc(t) + '">' + esc(t) + '</button>';
   });
+  if (pastTrips.length > 0) {
+    html += '<button class="summary-filter-btn" id="toggle-past" style="border-style:dashed;">Show Past</button>';
+  }
   html += '</div></div>';
 
   html += '<div class="summary-cards" id="summary-cards">';
@@ -1992,7 +2097,8 @@ async function renderSummaryList() {
     const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const dateRange = trip.days === 1 ? startStr : startStr + ' – ' + endStr;
 
-    html += '<div class="summary-card" data-type="' + esc(trip.type) + '" data-idx="' + idx + '" style="cursor:pointer;">';
+    const isPast = trip.endDk < todayDk;
+    html += '<div class="summary-card" data-type="' + esc(trip.type) + '" data-idx="' + idx + '" data-past="' + (isPast ? '1' : '0') + '" style="cursor:pointer;' + (isPast ? 'display:none;opacity:0.6;' : '') + '">';
     html += '<div class="summary-card-pct" style="background:' + bgColor + '">' + trip.pct + '%</div>';
     html += '<div class="summary-card-body">';
     html += '<div class="summary-card-title">' + esc(trip.cleanName) + '</div>';
@@ -2187,18 +2293,30 @@ async function renderSummaryList() {
   });
 
   // Filter buttons
-  mainContent.querySelectorAll('.summary-filter-btn').forEach(btn => {
+  let showPast = false;
+  mainContent.querySelectorAll('.summary-filter-btn:not(#toggle-past)').forEach(btn => {
     btn.addEventListener('click', () => {
       const filter = btn.dataset.filter;
-      mainContent.querySelectorAll('.summary-filter-btn').forEach(b => b.classList.remove('active'));
+      mainContent.querySelectorAll('.summary-filter-btn:not(#toggle-past)').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       mainContent.querySelectorAll('.summary-card').forEach(card => {
-        if (filter === 'All' || card.dataset.type === filter) {
-          card.style.display = '';
-        } else {
-          card.style.display = 'none';
-        }
+        const typeMatch = filter === 'All' || card.dataset.type === filter;
+        const pastMatch = showPast || card.dataset.past === '0';
+        card.style.display = (typeMatch && pastMatch) ? '' : 'none';
       });
     });
   });
+
+  // Toggle past trips
+  const togglePastBtn = document.getElementById('toggle-past');
+  if (togglePastBtn) {
+    togglePastBtn.addEventListener('click', () => {
+      showPast = !showPast;
+      togglePastBtn.textContent = showPast ? 'Hide Past' : 'Show Past';
+      togglePastBtn.classList.toggle('active', showPast);
+      mainContent.querySelectorAll('.summary-card[data-past="1"]').forEach(card => {
+        card.style.display = showPast ? '' : 'none';
+      });
+    });
+  }
 }

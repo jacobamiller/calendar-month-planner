@@ -1952,33 +1952,57 @@ async function renderSummaryList() {
   // Sort by start date
   trips.sort((a, b) => a.startDk.localeCompare(b.startDk));
 
-  let html = '<div class="summary-container">';
-  html += '<h2>Trip Summary (' + trips.length + ' trips)</h2>';
-  html += '<table class="summary-table">';
-  html += '<thead><tr><th>%</th><th>Trip</th><th>When</th><th>Days</th><th>Where</th><th>Who</th><th>Type</th></tr></thead>';
-  html += '<tbody>';
+  // Get unique types for filter buttons
+  const types = ['All'];
+  trips.forEach(t => { if (t.type && types.indexOf(t.type) === -1) types.push(t.type); });
 
+  let html = '<div class="summary-container">';
+  html += '<div class="summary-header">';
+  html += '<h2>Trips (' + trips.length + ')</h2>';
+  html += '<div class="summary-filters">';
+  types.forEach(t => {
+    html += '<button class="summary-filter-btn' + (t === 'All' ? ' active' : '') + '" data-filter="' + esc(t) + '">' + esc(t) + '</button>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="summary-cards" id="summary-cards">';
   trips.forEach(trip => {
     const bgColor = RESERVED_COLORS[trip.level];
-    const txtColor = RESERVED_TEXT_COLORS[trip.level];
     const startDate = new Date(trip.startDk + 'T00:00:00');
     const endDate = new Date(trip.endDk + 'T00:00:00');
-    endDate.setDate(endDate.getDate() - 1); // exclusive end
+    endDate.setDate(endDate.getDate() - 1);
     const startStr = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const dateRange = trip.days === 1 ? startStr : startStr + ' – ' + endStr;
 
-    html += '<tr>';
-    html += '<td><span class="summary-pct" style="background:' + bgColor + ';color:' + txtColor + '">' + trip.pct + '%</span></td>';
-    html += '<td>' + esc(trip.cleanName) + '</td>';
-    html += '<td>' + dateRange + '</td>';
-    html += '<td>' + trip.days + '</td>';
-    html += '<td>' + esc(trip.location) + '</td>';
-    html += '<td>' + esc(trip.who) + '</td>';
-    html += '<td>' + esc(trip.type) + '</td>';
-    html += '</tr>';
+    html += '<div class="summary-card" data-type="' + esc(trip.type) + '">';
+    html += '<div class="summary-card-pct" style="background:' + bgColor + '">' + trip.pct + '%</div>';
+    html += '<div class="summary-card-body">';
+    html += '<div class="summary-card-title">' + esc(trip.cleanName) + '</div>';
+    html += '<div class="summary-card-meta">';
+    html += '<span>📅 ' + dateRange + ' (' + trip.days + 'd)</span>';
+    if (trip.location) html += '<span>📍 ' + esc(trip.location) + '</span>';
+    if (trip.who) html += '<span>👤 ' + esc(trip.who) + '</span>';
+    if (trip.type) html += '<span class="summary-card-type">' + esc(trip.type) + '</span>';
+    html += '</div></div></div>';
   });
+  html += '</div></div>';
 
-  html += '</tbody></table></div>';
   mainContent.innerHTML = html;
+
+  // Filter buttons
+  mainContent.querySelectorAll('.summary-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const filter = btn.dataset.filter;
+      mainContent.querySelectorAll('.summary-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      mainContent.querySelectorAll('.summary-card').forEach(card => {
+        if (filter === 'All' || card.dataset.type === filter) {
+          card.style.display = '';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    });
+  });
 }

@@ -1838,10 +1838,10 @@ function renderAddTripForm() {
 
     // Build description with structured data
     let desc = '';
-    if (who) desc += 'Who: ' + who + '\\n';
-    desc += 'Type: ' + selectedType + '\\n';
-    if (location) desc += 'Location: ' + location + '\\n';
-    desc += 'Likelihood: ' + selectedPct + '%\\n';
+    if (who) desc += 'Who: ' + who + '\n';
+    desc += 'Type: ' + selectedType + '\n';
+    if (location) desc += 'Location: ' + location + '\n';
+    desc += 'Likelihood: ' + selectedPct + '%\n';
     if (notes) desc += 'Notes: ' + notes;
 
     // End date for all-day event is exclusive (next day)
@@ -1932,11 +1932,17 @@ async function renderSummaryList() {
       const e = new Date(endDk + 'T00:00:00');
       const days = Math.max(1, Math.round((e - s) / 86400000));
 
-      // Parse structured data from description
-      const desc = ev.description || '';
-      const who = (desc.match(/Who:\s*(.+)/i) || [])[1] || '';
-      const type = (desc.match(/Type:\s*(.+)/i) || [])[1] || '';
-      const location = ev.location || (desc.match(/Location:\s*(.+)/i) || [])[1] || '';
+      // Parse structured data from description — handle both real newlines and literal \n
+      const desc = (ev.description || '').replace(/\\n/g, '\n');
+      const descLines = desc.split('\n');
+      let who = '', type = '', location = ev.location || '', notes = '';
+      descLines.forEach(line => {
+        const l = line.trim();
+        if (l.match(/^Who:\s*/i)) who = l.replace(/^Who:\s*/i, '');
+        else if (l.match(/^Type:\s*/i)) type = l.replace(/^Type:\s*/i, '');
+        else if (l.match(/^Location:\s*/i) && !location) location = l.replace(/^Location:\s*/i, '');
+        else if (l.match(/^Notes:\s*/i)) notes = l.replace(/^Notes:\s*/i, '');
+      });
 
       // Parse % from title
       const pctMatch = ev.summary.match(/(\d+)\s*%/);
@@ -1945,7 +1951,7 @@ async function renderSummaryList() {
 
       const cleanName = ev.summary.replace(/^trip ideas?\s*-\s*/i, '').replace(/\d+\s*%\s*/, '').trim();
 
-      trips.push({ summary: ev.summary, cleanName, startDk, endDk, days, who, type, location, pct, level });
+      trips.push({ summary: ev.summary, cleanName, startDk, endDk, days, who, type, location, notes, pct, level, eventId: ev.id, calId: ev.organizer ? ev.organizer.email : '' });
     });
   }));
 
@@ -1966,7 +1972,7 @@ async function renderSummaryList() {
   html += '</div></div>';
 
   html += '<div class="summary-cards" id="summary-cards">';
-  trips.forEach(trip => {
+  trips.forEach((trip, idx) => {
     const bgColor = RESERVED_COLORS[trip.level];
     const startDate = new Date(trip.startDk + 'T00:00:00');
     const endDate = new Date(trip.endDk + 'T00:00:00');
@@ -1975,20 +1981,110 @@ async function renderSummaryList() {
     const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const dateRange = trip.days === 1 ? startStr : startStr + ' – ' + endStr;
 
-    html += '<div class="summary-card" data-type="' + esc(trip.type) + '">';
+    html += '<div class="summary-card" data-type="' + esc(trip.type) + '" data-idx="' + idx + '" style="cursor:pointer;">';
     html += '<div class="summary-card-pct" style="background:' + bgColor + '">' + trip.pct + '%</div>';
     html += '<div class="summary-card-body">';
     html += '<div class="summary-card-title">' + esc(trip.cleanName) + '</div>';
     html += '<div class="summary-card-meta">';
-    html += '<span>📅 ' + dateRange + ' (' + trip.days + 'd)</span>';
-    if (trip.location) html += '<span>📍 ' + esc(trip.location) + '</span>';
-    if (trip.who) html += '<span>👤 ' + esc(trip.who) + '</span>';
+    html += '<span>' + dateRange + ' (' + trip.days + 'd)</span>';
+    if (trip.location) html += '<span>' + esc(trip.location) + '</span>';
+    if (trip.who) html += '<span>' + esc(trip.who) + '</span>';
     if (trip.type) html += '<span class="summary-card-type">' + esc(trip.type) + '</span>';
-    html += '</div></div></div>';
+    html += '</div>';
+    if (trip.notes) html += '<div style="font-size:11px;color:#999;margin-top:3px;">' + esc(trip.notes) + '</div>';
+    html += '</div></div>';
   });
   html += '</div></div>';
 
   mainContent.innerHTML = html;
+
+  // Click card to edit
+  mainContent.querySelectorAll('.summary-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.summary-filter-btn')) return;
+      const idx = parseInt(card.dataset.idx, 10);
+      const trip = trips[idx];
+      if (!trip) return;
+
+      const old = document.getElementById('trip-edit-popup');
+      if (old) old.remove();
+
+      const popup = document.createElement('div');
+      popup.id = 'trip-edit-popup';
+      popup.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #ccc;border-radius:12px;padding:16px 20px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,0.2);z-index:200;width:360px;max-width:90vw;';
+
+      let phtml = '<div style="font-weight:700;font-size:15px;margin-bottom:10px;">' + esc(trip.cleanName) + '</div>';
+      phtml += '<div style="color:#666;font-size:12px;margin-bottom:6px;">' + trip.startDk + ' to ' + trip.endDk + ' (' + trip.days + ' days)</div>';
+      if (trip.location) phtml += '<div style="color:#666;font-size:12px;">Location: ' + esc(trip.location) + '</div>';
+      if (trip.who) phtml += '<div style="color:#666;font-size:12px;">Who: ' + esc(trip.who) + '</div>';
+      if (trip.type) phtml += '<div style="color:#666;font-size:12px;">Type: ' + esc(trip.type) + '</div>';
+      if (trip.notes) phtml += '<div style="color:#666;font-size:12px;margin-top:4px;">Notes: ' + esc(trip.notes) + '</div>';
+
+      // % buttons
+      phtml += '<div style="margin-top:12px;font-size:11px;font-weight:600;color:#888;">CHANGE LIKELIHOOD</div>';
+      phtml += '<div style="display:flex;gap:6px;margin-top:6px;">';
+      [25, 50, 75, 100].forEach(p => {
+        const lvl = p >= 100 ? 4 : p >= 75 ? 3 : p >= 50 ? 2 : 1;
+        const active = trip.pct === p ? 'outline:2px solid #333;' : '';
+        phtml += '<button class="edit-pct-btn" data-pct="' + p + '" style="flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;background:' + RESERVED_COLORS[lvl] + ';color:' + RESERVED_TEXT_COLORS[lvl] + ';' + active + '">' + p + '%</button>';
+      });
+      phtml += '</div>';
+
+      phtml += '<div style="display:flex;gap:8px;margin-top:14px;">';
+      phtml += '<button id="edit-close" style="flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;cursor:pointer;background:#fff;font-size:12px;">Close</button>';
+      phtml += '<button id="edit-gantt" style="flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;background:#0a66c2;color:#fff;font-size:12px;">View in Gantt</button>';
+      phtml += '</div>';
+
+      popup.innerHTML = phtml;
+      document.body.appendChild(popup);
+
+      // Backdrop
+      const backdrop = document.createElement('div');
+      backdrop.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:199;';
+      document.body.appendChild(backdrop);
+
+      const closePopup = () => { popup.remove(); backdrop.remove(); };
+      backdrop.onclick = closePopup;
+      popup.querySelector('#edit-close').onclick = closePopup;
+
+      popup.querySelector('#edit-gantt').onclick = () => {
+        closePopup();
+        currentView = 'gantt';
+        viewToggle.textContent = 'Month View';
+        loadGantt();
+      };
+
+      // % change buttons — update Google Calendar event title
+      popup.querySelectorAll('.edit-pct-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const newPct = parseInt(btn.dataset.pct, 10);
+          const newSummary = 'Trip Ideas - ' + newPct + '% ' + trip.cleanName;
+          const calId = trip.calId || tripIdeasCalId;
+
+          btn.textContent = '...';
+          try {
+            const resp = await fetch(
+              'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(calId) + '/events/' + encodeURIComponent(trip.eventId),
+              {
+                method: 'PATCH',
+                headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ summary: newSummary }),
+              }
+            );
+            if (resp.ok) {
+              eventsCache = {};
+              closePopup();
+              renderSummaryList();
+            } else {
+              btn.textContent = 'Error';
+            }
+          } catch(err) {
+            btn.textContent = 'Error';
+          }
+        });
+      });
+    });
+  });
 
   // Filter buttons
   mainContent.querySelectorAll('.summary-filter-btn').forEach(btn => {

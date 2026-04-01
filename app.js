@@ -12,6 +12,10 @@ let syncEventIds = {};        // "YYYY-MM-DD" → event ID on the sync calendar
 let syncReady = false;        // true once sync calendar is found/created
 let currentView = 'grid';    // 'grid' or 'gantt'
 
+function reloadView() {
+  if (currentView === 'gantt') loadGantt(); else loadMonth();
+}
+
 // Country columns: name + possible Google Calendar ID patterns
 const COUNTRY_COLUMNS = [
   { name: 'Vietnam',  match: ['vietnam', 'vietnamese'], fallbackId: 'en.vietnamese#holiday@group.v.calendar.google.com' },
@@ -173,7 +177,7 @@ async function fetchCalendars() {
 
   renderCalendarCheckboxes();
   renderColumnCheckboxes();
-  loadMonth();
+  reloadView();
 }
 
 async function ensureSyncCalendar(calendarItems) {
@@ -239,7 +243,7 @@ function renderCalendarCheckboxes() {
         selectedCalendarIds = selectedCalendarIds.filter(id => id !== cal.id);
       }
       localStorage.setItem('mp_selectedCals', JSON.stringify(selectedCalendarIds));
-      loadMonth();
+      reloadView();
     };
 
     const dot = document.createElement('span');
@@ -318,7 +322,7 @@ function renderColumnCheckboxes() {
         hiddenColumns.add(col.key);
       }
       localStorage.setItem('mp_hiddenCols', JSON.stringify([...hiddenColumns]));
-      loadMonth();
+      reloadView();
     };
 
     const lbl = document.createElement('span');
@@ -342,7 +346,7 @@ function moveColumn(index, direction) {
   columns[newIndex] = temp;
   saveColumnOrder(columns);
   renderColumnCheckboxes();
-  loadMonth();
+  reloadView();
 }
 
 // ── Month Navigation ──
@@ -353,7 +357,7 @@ todayBtn.onclick = () => {
   currentYear = now.getFullYear();
   currentMonth = now.getMonth();
   updateTitle();
-  if (accessToken) loadMonth();
+  if (accessToken) reloadView();
 };
 
 // Re-sync all reserved days to Google Calendar with current format
@@ -407,7 +411,7 @@ resyncBtn.onclick = async () => {
 const viewToggle = document.getElementById('view-toggle');
 viewToggle.onclick = () => {
   currentView = currentView === 'grid' ? 'gantt' : 'grid';
-  viewToggle.textContent = currentView === 'grid' ? 'Gantt' : 'Grid';
+  viewToggle.textContent = currentView === 'grid' ? 'Gantt View' : 'Month View';
   if (accessToken) {
     if (currentView === 'gantt') {
       loadGantt();
@@ -415,6 +419,15 @@ viewToggle.onclick = () => {
       loadMonth();
     }
   }
+};
+
+// Legend toggle
+const legendToggle = document.getElementById('legend-toggle');
+let legendVisible = true;
+legendToggle.onclick = () => {
+  legendVisible = !legendVisible;
+  legendEl.style.display = legendVisible ? '' : 'none';
+  legendToggle.textContent = legendVisible ? 'Key' : 'Show Key';
 };
 
 columnsToggle.onclick = () => {
@@ -432,7 +445,7 @@ function shiftMonth(delta) {
   if (currentMonth < 0) { currentMonth = 11; currentYear--; }
   if (currentMonth > 11) { currentMonth = 0; currentYear++; }
   updateTitle();
-  if (accessToken) loadMonth();
+  if (accessToken) reloadView();
 }
 
 function updateTitle() {
@@ -858,8 +871,9 @@ function renderGrid(calendars, calEvents, holidayMaps) {
     const isWeekend = dow === 0 || dow === 6;
     const dk = dateKey(date);
     const tripInfo = tripIdeaDates[dk];
+    const isToday = (currentYear === new Date().getFullYear() && currentMonth === new Date().getMonth() && day === new Date().getDate());
 
-    html += `<tr class="${isWeekend ? 'weekend' : ''}">`;
+    html += `<tr class="${isWeekend ? 'weekend' : ''}${isToday ? ' today-row' : ''}">`;
     html += `<td class="date-cell">${dayNames[dow]} ${String(day).padStart(2, '\u00A0')}</td>`;
 
     orderedCols.forEach(col => {
@@ -1070,36 +1084,46 @@ function applyReservedLevel(cell, lvl) {
 function renderLegend(calendars) {
   legendEl.innerHTML = '';
 
-  // Reserved legend
+  // Reserved legend — stacked vertically, 100% on top, aligned left
+  const reservedSection = document.createElement('div');
+  reservedSection.style.cssText = 'display:flex;flex-direction:column;gap:1px;margin-right:12px;';
   const levels = [
-    { color: RESERVED_COLORS[1], textColor: RESERVED_TEXT_COLORS[1], label: 'Planning (25%)' },
-    { color: RESERVED_COLORS[2], textColor: RESERVED_TEXT_COLORS[2], label: 'Considering (50%)' },
-    { color: RESERVED_COLORS[3], textColor: RESERVED_TEXT_COLORS[3], label: 'Confident (75%)' },
     { color: RESERVED_COLORS[4], textColor: RESERVED_TEXT_COLORS[4], label: 'Reserved (100%)' },
+    { color: RESERVED_COLORS[3], textColor: RESERVED_TEXT_COLORS[3], label: 'Confident (75%)' },
+    { color: RESERVED_COLORS[2], textColor: RESERVED_TEXT_COLORS[2], label: 'Considering (50%)' },
+    { color: RESERVED_COLORS[1], textColor: RESERVED_TEXT_COLORS[1], label: 'Planning (25%)' },
   ];
   levels.forEach(l => {
-    const item = document.createElement('span');
-    item.className = 'legend-item';
+    const item = document.createElement('div');
+    item.style.cssText = 'display:flex;align-items:center;gap:4px;';
     const swatch = document.createElement('span');
     swatch.className = 'legend-color';
     swatch.style.background = l.color;
     item.appendChild(swatch);
-    item.appendChild(document.createTextNode(' ' + l.label));
-    legendEl.appendChild(item);
+    item.appendChild(document.createTextNode(l.label));
+    reservedSection.appendChild(item);
   });
+  legendEl.appendChild(reservedSection);
 
-  // Holiday legend
-  const hItem = document.createElement('span');
-  hItem.className = 'legend-item';
-  const hSwatch = document.createElement('span');
-  hSwatch.className = 'legend-color';
-  hSwatch.style.background = '#e53935';
-  hItem.appendChild(hSwatch);
-  hItem.appendChild(document.createTextNode(' Holiday'));
-  legendEl.appendChild(hItem);
+  // Holiday legends — stacked vertically like reserved
+  const holidaySection = document.createElement('div');
+  holidaySection.style.cssText = 'display:flex;flex-direction:column;gap:1px;margin-right:12px;';
+  COUNTRY_COLUMNS.forEach(cc => {
+    if (hiddenColumns.has('col_' + cc.name)) return;
+    const item = document.createElement('div');
+    item.style.cssText = 'display:flex;align-items:center;gap:4px;';
+    const swatch = document.createElement('span');
+    swatch.className = 'legend-color';
+    swatch.style.background = '#e53935';
+    item.appendChild(swatch);
+    item.appendChild(document.createTextNode(cc.name + ' Holiday'));
+    holidaySection.appendChild(item);
+  });
+  if (holidaySection.children.length > 0) legendEl.appendChild(holidaySection);
 
-  // Calendar legends
+  // Calendar legends — only show calendars that are visible (not hidden in columns)
   calendars.forEach(cal => {
+    if (hiddenColumns.has('col_cal_' + cal.id)) return;
     const item = document.createElement('span');
     item.className = 'legend-item';
     const swatch = document.createElement('span');
@@ -1109,6 +1133,9 @@ function renderLegend(calendars) {
     item.appendChild(document.createTextNode(' ' + (cal.summaryOverride || cal.summary || cal.id)));
     legendEl.appendChild(item);
   });
+
+  // Respect legend visibility toggle
+  legendEl.style.display = legendVisible ? '' : 'none';
 }
 
 // ── API Helper ──
@@ -1161,15 +1188,13 @@ function esc(str) {
 async function loadGantt() {
   mainContent.innerHTML = '<div class="loading">Loading Gantt view...</div>';
 
-  // Build date range: 1 month back to 2 months ahead
   const today = new Date();
   const startMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-  const endMonth = new Date(today.getFullYear(), today.getMonth() + 3, 0); // last day of month+2
+  const endMonth = new Date(today.getFullYear(), today.getMonth() + 3, 0);
 
   const timeMin = startMonth.toISOString();
   const timeMax = new Date(endMonth.getFullYear(), endMonth.getMonth(), endMonth.getDate(), 23, 59, 59).toISOString();
 
-  // Fetch events from all selected calendars
   const selectedCals = allCalendars
     .filter(c => selectedCalendarIds.includes(c.id))
     .filter(c => !HOLIDAY_CAL_IDS.has(c.id) && !isHolidayCalendar(c));
@@ -1185,10 +1210,29 @@ async function loadGantt() {
     });
   }));
 
-  renderGantt(allTripEvents, startMonth, endMonth, today);
+  // Fetch holidays for Gantt
+  const ganttHolidays = {};
+  await Promise.all(COUNTRY_COLUMNS.map(async cc => {
+    if (!cc.calId) return;
+    const events = await fetchEvents(cc.calId, timeMin, timeMax);
+    ganttHolidays[cc.name] = {};
+    events.forEach(ev => {
+      const s = new Date((ev.start.date || ev.start.dateTime.split('T')[0]) + 'T00:00:00');
+      const e = new Date((ev.end.date || ev.end.dateTime.split('T')[0]) + 'T00:00:00');
+      const d = new Date(s);
+      while (d < e) {
+        const dk = dateKey(d);
+        if (!ganttHolidays[cc.name][dk]) ganttHolidays[cc.name][dk] = [];
+        ganttHolidays[cc.name][dk].push(ev.summary);
+        d.setDate(d.getDate() + 1);
+      }
+    });
+  }));
+
+  renderGantt(allTripEvents, startMonth, endMonth, today, ganttHolidays);
 }
 
-function renderGantt(tripEvents, startDate, endDate, today) {
+function renderGantt(tripEvents, startDate, endDate, today, ganttHolidays) {
   // Build list of all days in range
   const days = [];
   const d = new Date(startDate);
@@ -1229,15 +1273,38 @@ function renderGantt(tripEvents, startDate, endDate, today) {
   const todayDk = dateKey(today);
   const dayNames = ['S','M','T','W','T','F','S'];
 
+  // Hidden trips set — persisted to localStorage
+  const hiddenTrips = new Set(JSON.parse(localStorage.getItem('mp_hiddenTrips') || '[]'));
+
+  // Filter trips to only those with at least 1 day in the viewed range
+  const daySet = new Set(days.map(d => dateKey(d)));
+  const visibleTrips = trips.filter(trip => {
+    for (const dk of trip.days) { if (daySet.has(dk)) return true; }
+    return false;
+  });
+
   let html = '<div class="gantt-container"><div class="gantt-chart">';
 
-  // Header row: month labels + day numbers
+  // Month labels row
+  html += '<div class="gantt-month-row">';
+  html += '<div class="gantt-label-col" style="background:#f0f0f0"></div>';
+  let mi = 0;
+  while (mi < days.length) {
+    const m = days[mi].getMonth();
+    let span = 0;
+    while (mi + span < days.length && days[mi + span].getMonth() === m) span++;
+    const mName = days[mi].toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    html += '<div class="gantt-month-cell" style="flex:' + span + ';min-width:' + (span * 22) + 'px">' + mName + '</div>';
+    mi += span;
+  }
+  html += '<div class="gantt-end-col"></div>';
+  html += '</div>';
+
+  // Day headers row
   html += '<div class="gantt-header">';
   html += '<div class="gantt-label-col">Trip</div>';
   html += '<div class="gantt-timeline">';
-  let prevMonth = -1;
-  days.forEach((day, i) => {
-    const m = day.getMonth();
+  days.forEach(day => {
     const dow = day.getDay();
     const isToday = dateKey(day) === todayDk;
     const isWeekend = dow === 0 || dow === 6;
@@ -1246,22 +1313,83 @@ function renderGantt(tripEvents, startDate, endDate, today) {
     if (isWeekend) cls += ' weekend';
     if (isToday) cls += ' today';
     if (isMonthStart) cls += ' month-start';
-    // Show month name on 1st
-    let monthLabel = '';
-    if (m !== prevMonth) {
-      const mName = day.toLocaleDateString('en-US', { month: 'short' });
-      monthLabel = '<span class="gantt-month-label" style="left:0">' + mName + '</span>';
-      prevMonth = m;
-    }
-    html += '<div class="' + cls + '" style="position:relative">' + monthLabel + '<div>' + day.getDate() + '</div><div>' + dayNames[dow] + '</div></div>';
+    html += '<div class="' + cls + '"><div>' + day.getDate() + '</div><div>' + dayNames[dow] + '</div></div>';
   });
   html += '</div></div>';
 
-  // Trip rows
-  trips.forEach(trip => {
+  // Reserved row (highest % per day across all trips)
+  if (!hiddenColumns.has('col_reserved')) {
+  html += '<div class="gantt-row">';
+  html += '<div class="gantt-row-label section-label">Reserved</div>';
+  html += '<div class="gantt-row-timeline">';
+  days.forEach(day => {
+    const dk = dateKey(day);
+    const dow = day.getDay();
+    // Find max level across all trips for this day
+    let maxLevel = 0;
+    trips.forEach(trip => {
+      if (trip.days.has(dk)) {
+        const stored = localStorage.getItem('mp_trip_pct_' + dk + '_' + trip.tripKey);
+        const pctMatch = trip.title.match(/(\d+)\s*%/);
+        let defLvl = 1;
+        if (pctMatch) { const p = parseInt(pctMatch[1],10); if (p>=100) defLvl=4; else if (p>=75) defLvl=3; else if (p>=50) defLvl=2; }
+        const lvl = stored !== null ? parseInt(stored, 10) : defLvl;
+        if (lvl > maxLevel) maxLevel = lvl;
+      }
+    });
+    if (maxLevel > 0) {
+      const pctVal = Math.round(RESERVED_LEVELS[maxLevel] * 100);
+      html += '<div class="gantt-cell' + (dow===0||dow===6 ? ' weekend' : '') + '"><div class="gantt-bar" style="background:' + RESERVED_COLORS[maxLevel] + ';color:' + RESERVED_TEXT_COLORS[maxLevel] + '">' + pctVal + '%</div></div>';
+    } else {
+      html += '<div class="gantt-cell' + (dow===0||dow===6 ? ' weekend' : '') + '"></div>';
+    }
+  });
+  html += '</div></div>';
+  } // end if !hiddenColumns reserved
+
+  // Holiday rows per country (half height, respect hidden columns)
+  if (ganttHolidays) {
+    COUNTRY_COLUMNS.forEach(cc => {
+      if (hiddenColumns.has('col_' + cc.name)) return;
+      const holidays = ganttHolidays[cc.name] || {};
+      html += '<div class="gantt-row holiday-row">';
+      html += '<div class="gantt-row-label section-label">' + esc(cc.name) + '</div>';
+      html += '<div class="gantt-row-timeline">';
+      days.forEach(day => {
+        const dk = dateKey(day);
+        const dow = day.getDay();
+        const names = holidays[dk];
+        if (names && names.length > 0) {
+          html += '<div class="gantt-cell' + (dow===0||dow===6 ? ' weekend' : '') + '" title="' + esc(names.join(', ')) + '"><div class="gantt-holiday-dot"></div></div>';
+        } else {
+          html += '<div class="gantt-cell' + (dow===0||dow===6 ? ' weekend' : '') + '"></div>';
+        }
+      });
+      html += '</div></div>';
+    });
+  }
+
+  // Dark separator between holidays and trips — built as a row with matching cells
+  const hiddenCount = visibleTrips.filter(t => hiddenTrips.has(t.tripKey)).length;
+  const sepHeight = hiddenCount > 0 ? '12px' : '4px';
+  html += '<div class="gantt-row" style="min-height:' + sepHeight + ';background:#555;">';
+  html += '<div class="gantt-row-label" style="min-height:' + sepHeight + ';padding:0;background:#555;font-size:8px;color:#ccc;display:flex;align-items:center;">';
+  if (hiddenCount > 0) {
+    html += '<button id="gantt-show-all" style="background:none;border:none;color:#ccc;font-size:8px;cursor:pointer;padding:0 4px;line-height:1;">Show ' + hiddenCount + ' hidden</button>';
+  }
+  html += '</div>';
+  html += '<div class="gantt-row-timeline" style="background:#555;">';
+  days.forEach(function() { html += '<div class="gantt-cell" style="background:#555;min-height:' + sepHeight + ';border:none;"></div>'; });
+  html += '</div>';
+  html += '<div class="gantt-end-col" style="background:#555;"></div>';
+  html += '</div>';
+
+  // Trip rows — only visible trips that have days in the current range, sorted by first day
+  visibleTrips.forEach(trip => {
+    if (hiddenTrips.has(trip.tripKey)) return;
     const cleanName = trip.title.replace(/^trip ideas?\s*-\s*/i, '').replace(/\d+\s*%\s*/, '').trim();
     html += '<div class="gantt-row">';
-    html += '<div class="gantt-row-label" title="' + esc(cleanName) + '">' + esc(cleanName.substring(0, 30)) + '</div>';
+    html += '<div class="gantt-row-label trip-label" title="' + esc(cleanName) + '"><button class="gantt-hide-btn" data-hide-trip="' + esc(trip.tripKey) + '">✕</button><span class="trip-name-text">' + esc(cleanName) + '</span></div>';
     html += '<div class="gantt-row-timeline">';
 
     days.forEach(day => {
@@ -1300,17 +1428,105 @@ function renderGantt(tripEvents, startDate, endDate, today) {
     html += '</div></div>';
   });
 
-  // Today line
+  // Today line — positioned via JS after render
   const todayIdx = days.findIndex(d => dateKey(d) === todayDk);
   if (todayIdx >= 0) {
-    const leftPct = ((todayIdx + 0.5) / totalDays * 100);
-    html += '<div class="gantt-today-line" style="left:calc(200px + ' + leftPct + '% * (100% - 200px) / 100)"></div>';
+    html += '<div class="gantt-today-line" data-today-idx="' + todayIdx + '" data-total="' + totalDays + '"></div>';
   }
 
   html += '</div></div>';
   mainContent.innerHTML = html;
 
-  // Bind click handlers for % editing
+  // Add + Month button positioned in the end column, spanning trip rows
+  const chart = mainContent.querySelector('.gantt-chart');
+  const tripRowEls = mainContent.querySelectorAll('.gantt-row .trip-label');
+  const endCols = mainContent.querySelectorAll('.gantt-end-col');
+  if (tripRowEls.length > 0 && endCols.length > 0) {
+    const firstTripRow = tripRowEls[0].closest('.gantt-row');
+    const lastTripRow = tripRowEls[tripRowEls.length - 1].closest('.gantt-row');
+    const topOffset = firstTripRow.offsetTop;
+    const height = lastTripRow.offsetTop + lastTripRow.offsetHeight - topOffset;
+    const lastEndCol = endCols[0];
+    const leftOffset = lastEndCol.offsetLeft;
+
+    const btnWrap = document.createElement('div');
+    btnWrap.style.cssText = 'position:absolute;top:' + topOffset + 'px;left:' + leftOffset + 'px;width:28px;height:' + height + 'px;z-index:20;';
+    const btn = document.createElement('button');
+    btn.id = 'gantt-load-more';
+    btn.style.cssText = 'writing-mode:vertical-rl;text-orientation:mixed;background:#dc3545;color:#fff;border:none;border-radius:4px;padding:8px 4px;font-size:9px;font-weight:600;cursor:pointer;letter-spacing:1px;width:100%;height:100%;';
+    btn.textContent = '+ Month';
+    btnWrap.appendChild(btn);
+    chart.appendChild(btnWrap);
+  }
+
+  // Load more click — extend endDate by 1 month and re-render
+  const loadMoreBtn = document.getElementById('gantt-load-more');
+  if (loadMoreBtn) {
+    loadMoreBtn.onclick = async () => {
+      const newEnd = new Date(endDate.getFullYear(), endDate.getMonth() + 2, 0);
+      loadMoreBtn.textContent = 'Loading...';
+      // Fetch additional month's events
+      const extraTimeMin = new Date(endDate.getFullYear(), endDate.getMonth() + 1, 1).toISOString();
+      const extraTimeMax = new Date(newEnd.getFullYear(), newEnd.getMonth(), newEnd.getDate(), 23, 59, 59).toISOString();
+      const selectedCals = allCalendars
+        .filter(c => selectedCalendarIds.includes(c.id))
+        .filter(c => !HOLIDAY_CAL_IDS.has(c.id) && !isHolidayCalendar(c));
+      const extraTrips = [];
+      await Promise.all(selectedCals.map(async cal => {
+        if (cal.id === syncCalId) return;
+        const events = await fetchEvents(cal.id, extraTimeMin, extraTimeMax);
+        events.forEach(ev => {
+          if (ev.summary && ev.summary.toLowerCase().includes('trip idea')) extraTrips.push(ev);
+        });
+      }));
+      const extraHolidays = {};
+      await Promise.all(COUNTRY_COLUMNS.map(async cc => {
+        if (!cc.calId) return;
+        const events = await fetchEvents(cc.calId, extraTimeMin, extraTimeMax);
+        extraHolidays[cc.name] = {};
+        events.forEach(ev => {
+          const s2 = new Date((ev.start.date || ev.start.dateTime.split('T')[0]) + 'T00:00:00');
+          const e2 = new Date((ev.end.date || ev.end.dateTime.split('T')[0]) + 'T00:00:00');
+          const d2 = new Date(s2);
+          while (d2 < e2) {
+            const dk2 = dateKey(d2);
+            if (!extraHolidays[cc.name][dk2]) extraHolidays[cc.name][dk2] = [];
+            extraHolidays[cc.name][dk2].push(ev.summary);
+            d2.setDate(d2.getDate() + 1);
+          }
+        });
+      }));
+      // Merge holidays
+      COUNTRY_COLUMNS.forEach(cc => {
+        if (extraHolidays[cc.name]) {
+          Object.entries(extraHolidays[cc.name]).forEach(([dk2, names]) => {
+            if (!ganttHolidays[cc.name]) ganttHolidays[cc.name] = {};
+            ganttHolidays[cc.name][dk2] = names;
+          });
+        }
+      });
+      const allTrips = tripEvents.concat(extraTrips);
+      renderGantt(allTrips, startDate, newEnd, today, ganttHolidays);
+    };
+  }
+
+  // Position today line using actual DOM measurements
+  const todayLine = mainContent.querySelector('.gantt-today-line');
+  if (todayLine) {
+    const firstTimeline = mainContent.querySelector('.gantt-row-timeline');
+    if (firstTimeline) {
+      const cells = firstTimeline.children;
+      const idx = parseInt(todayLine.dataset.todayIdx, 10);
+      if (idx >= 0 && idx < cells.length) {
+        const cell = cells[idx];
+        const chartRect = mainContent.querySelector('.gantt-chart').getBoundingClientRect();
+        const cellRect = cell.getBoundingClientRect();
+        todayLine.style.left = (cellRect.left - chartRect.left + cellRect.width / 2) + 'px';
+      }
+    }
+  }
+
+  // Bind click handlers for % editing on trip bars
   mainContent.querySelectorAll('.gantt-cell[data-tripkey]').forEach(cell => {
     cell.addEventListener('click', () => {
       const dk = cell.dataset.dk;
@@ -1333,4 +1549,70 @@ function renderGantt(tripEvents, startDate, endDate, today) {
       syncUpsertEvent(dk);
     });
   });
+
+  // Bind click handlers for holiday info popup
+  mainContent.querySelectorAll('.holiday-row .gantt-cell[title]').forEach(cell => {
+    cell.addEventListener('click', (e) => {
+      const title = cell.getAttribute('title');
+      if (!title) return;
+      // Remove existing popup
+      const old = document.getElementById('holiday-popup');
+      if (old) old.remove();
+      const popup = document.createElement('div');
+      popup.id = 'holiday-popup';
+      popup.style.cssText = 'position:fixed;background:#fff;border:1px solid #ccc;border-radius:6px;padding:10px 14px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:200;max-width:300px;';
+      popup.textContent = title;
+      popup.style.left = (e.clientX + 10) + 'px';
+      popup.style.top = (e.clientY + 10) + 'px';
+      document.body.appendChild(popup);
+      setTimeout(() => {
+        document.addEventListener('click', function closePopup() {
+          popup.remove();
+          document.removeEventListener('click', closePopup);
+        }, { once: true });
+      }, 0);
+    });
+  });
+
+  // Click trip label to show full text as overlay popup
+  mainContent.querySelectorAll('.trip-label').forEach(label => {
+    label.addEventListener('click', (e) => {
+      if (e.target.classList.contains('gantt-hide-btn')) return;
+      const old = document.querySelector('.gantt-trip-popup');
+      if (old) old.remove();
+      const popup = document.createElement('div');
+      popup.className = 'gantt-trip-popup';
+      popup.textContent = label.getAttribute('title');
+      popup.style.left = (e.clientX + 10) + 'px';
+      popup.style.top = (e.clientY - 10) + 'px';
+      document.body.appendChild(popup);
+      setTimeout(() => {
+        document.addEventListener('click', function close() {
+          popup.remove();
+          document.removeEventListener('click', close);
+        }, { once: true });
+      }, 0);
+    });
+  });
+
+  // Hide trip buttons
+  mainContent.querySelectorAll('.gantt-hide-btn[data-hide-trip]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const key = btn.dataset.hideTrip;
+      hiddenTrips.add(key);
+      localStorage.setItem('mp_hiddenTrips', JSON.stringify([...hiddenTrips]));
+      renderGantt(tripEvents, startDate, endDate, today, ganttHolidays);
+    });
+  });
+
+  // Show all hidden trips
+  const showAllBtn = document.getElementById('gantt-show-all');
+  if (showAllBtn) {
+    showAllBtn.addEventListener('click', () => {
+      hiddenTrips.clear();
+      localStorage.setItem('mp_hiddenTrips', '[]');
+      renderGantt(tripEvents, startDate, endDate, today, ganttHolidays);
+    });
+  }
 }

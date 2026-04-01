@@ -132,7 +132,7 @@ body {
 /* Grid Container */
 .grid-container {
   overflow: auto;
-  padding: 10px 20px 40px;
+  padding: 10px 20px 8px;
   height: calc(100vh - 50px);
 }
 
@@ -234,6 +234,27 @@ body {
 
 .month-grid tr.weekend td.date-cell {
   background: #e8e8e8;
+}
+
+.month-grid tr.today-row td {
+  position: relative;
+}
+
+.month-grid tr.today-row td::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: #dc3545;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.month-grid tr.today-row td.date-cell {
+  font-weight: 700;
+  color: #dc3545;
 }
 
 /* Event cells */
@@ -418,20 +439,20 @@ body {
 .legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
-  padding: 10px 20px;
+  gap: 4px 16px;
+  padding: 4px 20px;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .legend-color {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 2px;
 }
 
@@ -460,9 +481,55 @@ body {
   color: #888;
 }
 
+/* Gantt sidebar button */
+.gantt-end-col {
+  min-width: 28px;
+  max-width: 28px;
+  flex-shrink: 0;
+}
+
+.gantt-end-col button {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  background: #dc3545;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 4px;
+  font-size: 9px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 1px;
+  width: 100%;
+  height: 100%;
+}
+.gantt-end-col button:hover { background: #c82333; }
+
+.gantt-hide-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  color: #999;
+  padding: 0 4px;
+  line-height: 1;
+}
+.gantt-hide-btn:hover { color: #333; }
+
+.gantt-show-trips-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 8px;
+  color: #666;
+  padding: 0 8px;
+  line-height: 1;
+}
+.gantt-show-trips-btn:hover { color: #333; }
+
 /* Gantt View */
 .gantt-container {
-  padding: 10px 20px 40px;
+  padding: 10px 20px 8px;
   overflow-x: auto;
 }
 
@@ -470,6 +537,7 @@ body {
   position: relative;
   min-width: 100%;
 }
+
 
 .gantt-header {
   display: flex;
@@ -488,6 +556,10 @@ body {
   font-size: 11px;
   padding: 4px 8px;
   border-right: 1px solid #ddd;
+  position: sticky;
+  left: 0;
+  background: #fafafa;
+  z-index: 15;
 }
 
 .gantt-timeline {
@@ -506,7 +578,7 @@ body {
   color: #888;
 }
 
-.gantt-day-header.weekend { background: #f5f5f5; }
+.gantt-day-header.weekend { background: #e8e8e8; }
 .gantt-day-header.today { background: #e3f2fd; font-weight: 700; color: #1565c0; }
 .gantt-day-header.month-start { border-left: 2px solid #999; }
 
@@ -524,6 +596,7 @@ body {
   min-height: 28px;
 }
 
+.gantt-row { position: relative; }
 .gantt-row:hover { background: #fafafa; }
 
 .gantt-row-label {
@@ -538,6 +611,29 @@ body {
   text-overflow: ellipsis;
   display: flex;
   align-items: center;
+  position: sticky;
+  left: 0;
+  background: #fff;
+  z-index: 15;
+}
+
+.gantt-row-label.trip-label {
+  min-width: 200px;
+  max-width: 200px;
+  cursor: pointer;
+}
+
+.gantt-trip-popup {
+  position: fixed;
+  background: #fff;
+  border: 1px solid #ccc;
+  box-shadow: 4px 2px 12px rgba(0,0,0,0.2);
+  z-index: 200;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  max-width: 400px;
+  word-wrap: break-word;
 }
 
 .gantt-row-timeline {
@@ -554,7 +650,8 @@ body {
   position: relative;
 }
 
-.gantt-cell.weekend { background: #fafafa; }
+.gantt-cell.weekend { background: #e8e8e8; }
+.gantt-cell { background: #fff; }
 
 .gantt-bar {
   position: absolute;
@@ -563,8 +660,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 8px;
+  font-size: 6px;
   font-weight: 600;
+  overflow: hidden;
   transition: background 0.2s;
 }
 
@@ -573,9 +671,72 @@ body {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: #1565c0;
+  background: #dc3545;
   z-index: 5;
   pointer-events: none;
+}
+
+.gantt-month-row {
+  display: flex;
+  border-bottom: 1px solid #ddd;
+  background: #f0f0f0;
+}
+
+.gantt-month-cell {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 0;
+  color: #333;
+  border-right: 1px solid #ddd;
+}
+
+.gantt-row-label.section-label {
+  font-weight: 600;
+  color: #666;
+  font-size: 10px;
+  text-transform: uppercase;
+  background: #f5f5f5;
+}
+
+.gantt-row.holiday-row {
+  min-height: 14px;
+}
+
+.gantt-row.holiday-row .gantt-row-label {
+  font-size: 9px;
+  padding: 1px 8px;
+}
+
+.gantt-row.holiday-row .gantt-cell {
+  min-height: 14px;
+}
+
+.gantt-holiday-dot {
+  position: absolute;
+  inset: 1px 2px;
+  border-radius: 2px;
+  background: #e53935;
+}
+
+.gantt-separator {
+  height: 4px;
+  background: #555;
+  position: relative;
+}
+
+.gantt-separator.has-hidden {
+  height: 12px;
+}
+
+.gantt-separator .gantt-sep-content {
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  z-index: 1;
 }
 
 /* Print styles */
@@ -622,7 +783,8 @@ body {
     <h1 id="month-title"></h1>
     <button class="nav-btn" id="next-btn">&rarr;</button>
     <button class="today-btn" id="today-btn">Today</button>
-    <button class="nav-btn" id="view-toggle" style="font-weight:600;">Gantt</button>
+    <button class="nav-btn" id="view-toggle" style="font-weight:600;">Gantt View</button>
+    <button class="nav-btn" id="legend-toggle" style="font-size:11px;">Key</button>
   </div>
   <div class="header-right">
     <button id="columns-toggle">Columns</button>

@@ -10,11 +10,37 @@ let tripIdeaDates = {};       // "YYYY-MM-DD" → true (auto-detected from event
 let syncCalId = null;         // ID of the "Month Planner Sync" calendar
 let syncEventIds = {};        // "YYYY-MM-DD" → event ID on the sync calendar
 let syncReady = false;        // true once sync calendar is found/created
-let currentView = 'grid';    // 'grid' or 'gantt'
+let currentView = 'grid';    // 'grid', 'gantt', 'addtrip', 'summary'
 
 function reloadView() {
-  if (currentView === 'gantt') loadGantt(); else loadMonth();
+  if (currentView === 'gantt') loadGantt();
+  else if (currentView === 'addtrip') renderAddTripForm();
+  else if (currentView === 'summary') renderSummaryList();
+  else loadMonth();
 }
+
+// Frequent cities grouped by country — used for trip form location picker
+const LOCATIONS = [
+  { country: 'Vietnam', cities: ['Ho Chi Minh City', 'Hanoi', 'Da Nang', 'Hai Phong', 'Nha Trang', 'Vung Tau'] },
+  { country: 'Thailand', cities: ['Bangkok', 'Chiang Mai', 'Pattaya', 'Phuket', 'Hua Hin'] },
+  { country: 'China', cities: ['Shanghai', 'Xiamen', 'Shenzhen', 'Guangzhou', 'Beijing', 'Wuxi', 'Jiaxing'] },
+  { country: 'Cambodia', cities: ['Phnom Penh', 'Siem Reap'] },
+  { country: 'Singapore', cities: ['Singapore'] },
+  { country: 'Mexico', cities: ['Mexico City', 'Guadalajara', 'Cancun'] },
+  { country: 'USA', cities: ['San Francisco', 'Los Angeles', 'New York', 'Phoenix'] },
+  { country: 'Japan', cities: ['Tokyo', 'Osaka'] },
+  { country: 'South Korea', cities: ['Seoul', 'Busan'] },
+  { country: 'Hong Kong', cities: ['Hong Kong'] },
+  { country: 'Taiwan', cities: ['Taipei'] },
+  { country: 'Malaysia', cities: ['Kuala Lumpur'] },
+  { country: 'Philippines', cities: ['Manila', 'Cebu'] },
+  { country: 'Indonesia', cities: ['Jakarta', 'Bali'] },
+];
+
+const TRIP_TYPES = ['My Trip', 'Friend Visit', 'Client Visit', 'Event', 'Conference'];
+
+// Trip Ideas calendar ID — found at runtime
+let tripIdeasCalId = null;
 
 // Country columns: name + possible Google Calendar ID patterns
 const COUNTRY_COLUMNS = [
@@ -174,6 +200,7 @@ async function fetchCalendars() {
   }
 
   await ensureSyncCalendar(allItems);
+  await ensureTripIdeasCalendar(allItems);
 
   renderCalendarCheckboxes();
   renderColumnCheckboxes();
@@ -227,6 +254,36 @@ async function ensureSyncCalendar(calendarItems) {
     console.error('Error creating sync calendar:', err);
     updateSyncStatus('error');
   }
+}
+
+// Find or create the "Trip Ideas" calendar
+async function ensureTripIdeasCalendar(calendarItems) {
+  const cached = localStorage.getItem('mp_tripIdeasCalId');
+  const found = calendarItems.find(c =>
+    c.id === cached ||
+    (c.summary && c.summary.toLowerCase().includes('trip idea'))
+  );
+  if (found) {
+    tripIdeasCalId = found.id;
+    localStorage.setItem('mp_tripIdeasCalId', tripIdeasCalId);
+    return;
+  }
+  // Create it
+  try {
+    const resp = await fetch('https://www.googleapis.com/calendar/v3/calendars', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        summary: 'Trip Ideas',
+        description: 'Trip planning calendar managed by Month Planner app.',
+      }),
+    });
+    if (resp.ok) {
+      const cal = await resp.json();
+      tripIdeasCalId = cal.id;
+      localStorage.setItem('mp_tripIdeasCalId', tripIdeasCalId);
+    }
+  } catch(e) { console.error('Failed to create Trip Ideas calendar:', e); }
 }
 
 function renderCalendarCheckboxes() {
@@ -410,15 +467,23 @@ resyncBtn.onclick = async () => {
 // View toggle
 const viewToggle = document.getElementById('view-toggle');
 viewToggle.onclick = () => {
-  currentView = currentView === 'grid' ? 'gantt' : 'grid';
+  const views = ['grid', 'gantt'];
+  const idx = views.indexOf(currentView);
+  currentView = views[(idx + 1) % views.length];
   viewToggle.textContent = currentView === 'grid' ? 'Gantt View' : 'Month View';
-  if (accessToken) {
-    if (currentView === 'gantt') {
-      loadGantt();
-    } else {
-      loadMonth();
-    }
-  }
+  if (accessToken) reloadView();
+};
+
+// Add Trip button
+document.getElementById('add-trip-btn').onclick = () => {
+  currentView = 'addtrip';
+  if (accessToken) renderAddTripForm();
+};
+
+// Summary button
+document.getElementById('summary-btn').onclick = () => {
+  currentView = 'summary';
+  if (accessToken) renderSummaryList();
 };
 
 // Legend toggle
@@ -1369,7 +1434,7 @@ function renderGantt(tripEvents, startDate, endDate, today, ganttHolidays) {
           if (!hasPrev && !hasNext) dotCls += ' gantt-holiday-single';
           else if (!hasPrev) dotCls += ' gantt-holiday-first';
           else if (!hasNext) dotCls += ' gantt-holiday-last';
-          html += '<div class="gantt-cell' + (dow===0||dow===6 ? ' weekend' : '') + '" title="' + esc(names.join(', ')) + '"><div class="' + dotCls + '"></div></div>';
+          html += '<div class="gantt-cell' + (dow===0||dow===6 ? ' weekend' : '') + '" data-country="' + esc(cc.name) + '" data-dk="' + dk + '" title="' + esc(names.join(', ')) + '"><div class="' + dotCls + '"></div></div>';
         } else {
           html += '<div class="gantt-cell' + (dow===0||dow===6 ? ' weekend' : '') + '"></div>';
         }
@@ -1401,32 +1466,40 @@ function renderGantt(tripEvents, startDate, endDate, today, ganttHolidays) {
     html += '<div class="gantt-row-label trip-label" title="' + esc(cleanName) + '"><button class="gantt-hide-btn" data-hide-trip="' + esc(trip.tripKey) + '">✕</button><span class="trip-name-text">' + esc(cleanName) + '</span></div>';
     html += '<div class="gantt-row-timeline">';
 
-    days.forEach(day => {
+    // Pre-compute levels for border gradient between days
+    const pctMatch = trip.title.match(/(\d+)\s*%/);
+    let defaultLevel = 1;
+    if (pctMatch) {
+      const p = parseInt(pctMatch[1], 10);
+      if (p >= 100) defaultLevel = 4; else if (p >= 75) defaultLevel = 3; else if (p >= 50) defaultLevel = 2;
+    }
+
+    days.forEach((day, dayIdx) => {
       const dk = dateKey(day);
       const isInTrip = trip.days.has(dk);
       const dow = day.getDay();
       const isWeekend = dow === 0 || dow === 6;
 
       if (isInTrip) {
-        // Get per-trip per-day level
         const storedLevel = localStorage.getItem('mp_trip_pct_' + dk + '_' + trip.tripKey);
-
-        // Parse default from title
-        const pctMatch = trip.title.match(/(\d+)\s*%/);
-        let defaultLevel = 1;
-        if (pctMatch) {
-          const pct = parseInt(pctMatch[1], 10);
-          if (pct >= 100) defaultLevel = 4;
-          else if (pct >= 75) defaultLevel = 3;
-          else if (pct >= 50) defaultLevel = 2;
-        }
-
         const level = storedLevel !== null ? parseInt(storedLevel, 10) : defaultLevel;
         const pctVal = Math.round(RESERVED_LEVELS[level] * 100);
         const bgColor = RESERVED_COLORS[level];
         const txtColor = RESERVED_TEXT_COLORS[level];
 
-        html += '<div class="gantt-cell' + (isWeekend ? ' weekend' : '') + '" data-dk="' + dk + '" data-tripkey="' + esc(trip.tripKey) + '" data-level="' + level + '" data-title="' + esc(cleanName) + '">';
+        // Check if prev/next days are in trip for border styling
+        const prevDk = dayIdx > 0 ? dateKey(days[dayIdx - 1]) : null;
+        const nextDk = dayIdx < days.length - 1 ? dateKey(days[dayIdx + 1]) : null;
+        const isFirst = !prevDk || !trip.days.has(prevDk);
+        const isLast = !nextDk || !trip.days.has(nextDk);
+
+        // Border: top and bottom in trip's color, left only on first, right only on last
+        let borderStyle = 'border-top:2px solid ' + bgColor + ';border-bottom:2px solid ' + bgColor + ';';
+        if (isFirst) borderStyle += 'border-left:2px solid ' + bgColor + ';border-radius:4px 0 0 4px;';
+        if (isLast) borderStyle += 'border-right:2px solid ' + bgColor + ';border-radius:0 4px 4px 0;';
+        if (isFirst && isLast) borderStyle += 'border-radius:4px;';
+
+        html += '<div class="gantt-cell' + (isWeekend ? ' weekend' : '') + '" data-dk="' + dk + '" data-tripkey="' + esc(trip.tripKey) + '" data-level="' + level + '" data-title="' + esc(cleanName) + '" style="' + borderStyle + '">';
         html += '<div class="gantt-bar" style="background:' + bgColor + ';color:' + txtColor + '">' + pctVal + '%</div>';
         html += '</div>';
       } else {
@@ -1560,17 +1633,51 @@ function renderGantt(tripEvents, startDate, endDate, today, ganttHolidays) {
   });
 
   // Bind click handlers for holiday info popup
-  mainContent.querySelectorAll('.holiday-row .gantt-cell[title]').forEach(cell => {
+  // Holiday click — show grouped list of consecutive holiday dates
+  mainContent.querySelectorAll('.holiday-row .gantt-cell[data-country]').forEach(cell => {
     cell.addEventListener('click', (e) => {
-      const title = cell.getAttribute('title');
-      if (!title) return;
-      // Remove existing popup
+      const country = cell.dataset.country;
+      const dk = cell.dataset.dk;
+      if (!country || !dk || !ganttHolidays[country]) return;
+      const holidays = ganttHolidays[country];
+
+      // Walk backwards and forwards to find all consecutive holiday dates
+      const group = [];
+      // Walk back
+      let d = new Date(dk + 'T00:00:00');
+      while (true) {
+        d.setDate(d.getDate() - 1);
+        const prevDk = dateKey(d);
+        if (holidays[prevDk] && holidays[prevDk].length > 0) {
+          group.unshift({ dk: prevDk, names: holidays[prevDk] });
+        } else break;
+      }
+      // Add clicked day
+      group.push({ dk: dk, names: holidays[dk] });
+      // Walk forward
+      d = new Date(dk + 'T00:00:00');
+      while (true) {
+        d.setDate(d.getDate() + 1);
+        const nextDk = dateKey(d);
+        if (holidays[nextDk] && holidays[nextDk].length > 0) {
+          group.push({ dk: nextDk, names: holidays[nextDk] });
+        } else break;
+      }
+
       const old = document.getElementById('holiday-popup');
       if (old) old.remove();
       const popup = document.createElement('div');
       popup.id = 'holiday-popup';
-      popup.style.cssText = 'position:fixed;background:#fff;border:1px solid #ccc;border-radius:6px;padding:10px 14px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:200;max-width:300px;';
-      popup.textContent = title;
+      popup.style.cssText = 'position:fixed;background:#fff;border:1px solid #ccc;border-radius:6px;padding:10px 14px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:200;max-width:350px;';
+      let popupHtml = '<div style="font-weight:600;margin-bottom:6px;">' + esc(country) + ' Holidays</div>';
+      group.forEach(g => {
+        const date = new Date(g.dk + 'T00:00:00');
+        const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        g.names.forEach(name => {
+          popupHtml += '<div style="margin:2px 0;">' + dateStr + ' — ' + esc(name) + '</div>';
+        });
+      });
+      popup.innerHTML = popupHtml;
       popup.style.left = (e.clientX + 10) + 'px';
       popup.style.top = (e.clientY + 10) + 'px';
       document.body.appendChild(popup);
@@ -1624,4 +1731,254 @@ function renderGantt(tripEvents, startDate, endDate, today, ganttHolidays) {
       renderGantt(tripEvents, startDate, endDate, today, ganttHolidays);
     });
   }
+}
+
+// ── Add Trip Form ──
+function renderAddTripForm() {
+  let locationOptions = '';
+  LOCATIONS.forEach(loc => {
+    locationOptions += '<optgroup label="' + esc(loc.country) + '">';
+    loc.cities.forEach(city => {
+      locationOptions += '<option value="' + esc(city + ', ' + loc.country) + '">' + esc(city) + '</option>';
+    });
+    locationOptions += '</optgroup>';
+  });
+
+  mainContent.innerHTML = `
+    <div class="trip-form">
+      <h2>Add Trip Idea</h2>
+      <label>Trip Name</label>
+      <input type="text" id="trip-name" placeholder="e.g. Visit Jared in Bangkok">
+      <div class="form-row">
+        <div>
+          <label>Start Date</label>
+          <input type="date" id="trip-start">
+        </div>
+        <div>
+          <label>End Date</label>
+          <input type="date" id="trip-end">
+        </div>
+      </div>
+      <label>Location</label>
+      <select id="trip-location">
+        <option value="">Select city...</option>
+        ${locationOptions}
+        <option value="__custom__">Other (type below)</option>
+      </select>
+      <input type="text" id="trip-location-custom" placeholder="City, Country" style="display:none;margin-top:4px;">
+      <label>Who (optional)</label>
+      <input type="text" id="trip-who" placeholder="e.g. Jared Stevens">
+      <label>Type</label>
+      <div class="type-btns" id="trip-type-btns">
+        ${TRIP_TYPES.map((t, i) => '<button class="type-btn' + (i === 0 ? ' active' : '') + '" data-type="' + esc(t) + '">' + esc(t) + '</button>').join('')}
+      </div>
+      <label>Likelihood</label>
+      <div class="type-btns" id="trip-pct-btns">
+        <button class="type-btn active" data-pct="25" style="background:#4CAF50;color:#fff;border-color:#4CAF50;">25%</button>
+        <button class="type-btn" data-pct="50" style="background:#FFC107;color:#333;border-color:#FFC107;">50%</button>
+        <button class="type-btn" data-pct="75" style="background:#FF9800;color:#fff;border-color:#FF9800;">75%</button>
+        <button class="type-btn" data-pct="100" style="background:#F44336;color:#fff;border-color:#F44336;">100%</button>
+      </div>
+      <label>Notes (optional)</label>
+      <textarea id="trip-notes" placeholder="Any details..."></textarea>
+      <button class="submit-btn" id="trip-submit">Add Trip</button>
+      <div class="form-status" id="trip-status"></div>
+    </div>
+  `;
+
+  // Location custom toggle
+  const locSelect = document.getElementById('trip-location');
+  const locCustom = document.getElementById('trip-location-custom');
+  locSelect.onchange = () => {
+    locCustom.style.display = locSelect.value === '__custom__' ? 'block' : 'none';
+  };
+
+  // Type buttons
+  let selectedType = TRIP_TYPES[0];
+  document.getElementById('trip-type-btns').addEventListener('click', (e) => {
+    if (!e.target.dataset.type) return;
+    selectedType = e.target.dataset.type;
+    document.querySelectorAll('#trip-type-btns .type-btn').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+  });
+
+  // Pct buttons
+  let selectedPct = 25;
+  document.getElementById('trip-pct-btns').addEventListener('click', (e) => {
+    if (!e.target.dataset.pct) return;
+    selectedPct = parseInt(e.target.dataset.pct, 10);
+    document.querySelectorAll('#trip-pct-btns .type-btn').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+  });
+
+  // Submit
+  document.getElementById('trip-submit').onclick = async () => {
+    const name = document.getElementById('trip-name').value.trim();
+    const start = document.getElementById('trip-start').value;
+    const end = document.getElementById('trip-end').value;
+    const location = locSelect.value === '__custom__' ? locCustom.value.trim() : locSelect.value;
+    const who = document.getElementById('trip-who').value.trim();
+    const notes = document.getElementById('trip-notes').value.trim();
+    const status = document.getElementById('trip-status');
+
+    if (!name || !start || !end) {
+      status.textContent = 'Please fill in name, start and end dates.';
+      status.style.color = '#dc3545';
+      return;
+    }
+
+    if (!tripIdeasCalId) {
+      status.textContent = 'Trip Ideas calendar not found. Please reload.';
+      status.style.color = '#dc3545';
+      return;
+    }
+
+    // Build event summary: "Trip Ideas - 25% Visit Jared in Bangkok"
+    const summary = 'Trip Ideas - ' + selectedPct + '% ' + name;
+
+    // Build description with structured data
+    let desc = '';
+    if (who) desc += 'Who: ' + who + '\\n';
+    desc += 'Type: ' + selectedType + '\\n';
+    if (location) desc += 'Location: ' + location + '\\n';
+    desc += 'Likelihood: ' + selectedPct + '%\\n';
+    if (notes) desc += 'Notes: ' + notes;
+
+    // End date for all-day event is exclusive (next day)
+    const endDate = new Date(end + 'T00:00:00');
+    endDate.setDate(endDate.getDate() + 1);
+    const endStr = endDate.toISOString().split('T')[0];
+
+    const submitBtn = document.getElementById('trip-submit');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating...';
+
+    try {
+      const resp = await fetch(
+        'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(tripIdeasCalId) + '/events',
+        {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            summary: summary,
+            description: desc,
+            location: location,
+            start: { date: start },
+            end: { date: endStr },
+          }),
+        }
+      );
+
+      if (resp.ok) {
+        status.textContent = 'Trip added! Switching to Gantt view...';
+        status.style.color = '#28a745';
+        // Clear cache so it reloads
+        eventsCache = {};
+        setTimeout(() => {
+          currentView = 'gantt';
+          viewToggle.textContent = 'Month View';
+          loadGantt();
+        }, 1000);
+      } else {
+        const err = await resp.text();
+        status.textContent = 'Error: ' + err;
+        status.style.color = '#dc3545';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Add Trip';
+      }
+    } catch(e) {
+      status.textContent = 'Error: ' + e.message;
+      status.style.color = '#dc3545';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Add Trip';
+    }
+  };
+
+  // Set default dates
+  const today = new Date();
+  document.getElementById('trip-start').value = dateKey(today);
+  const nextWeek = new Date(today);
+  nextWeek.setDate(nextWeek.getDate() + 3);
+  document.getElementById('trip-end').value = dateKey(nextWeek);
+}
+
+// ── Summary List ──
+async function renderSummaryList() {
+  mainContent.innerHTML = '<div class="loading">Loading trips...</div>';
+
+  const today = new Date();
+  const startMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const endMonth = new Date(today.getFullYear(), today.getMonth() + 6, 0);
+  const timeMin = startMonth.toISOString();
+  const timeMax = new Date(endMonth.getFullYear(), endMonth.getMonth(), endMonth.getDate(), 23, 59, 59).toISOString();
+
+  // Fetch from all calendars (not just trip ideas) to catch existing events
+  const selectedCals = allCalendars
+    .filter(c => selectedCalendarIds.includes(c.id))
+    .filter(c => !HOLIDAY_CAL_IDS.has(c.id) && !isHolidayCalendar(c));
+
+  const trips = [];
+  await Promise.all(selectedCals.map(async cal => {
+    if (cal.id === syncCalId) return;
+    const events = await fetchEvents(cal.id, timeMin, timeMax);
+    events.forEach(ev => {
+      if (!ev.summary || !ev.summary.toLowerCase().includes('trip idea')) return;
+      // Dedup by summary + start date
+      const startDk = ev.start.date || ev.start.dateTime.split('T')[0];
+      if (trips.some(t => t.summary === ev.summary && t.startDk === startDk)) return;
+
+      const endDk = ev.end.date || ev.end.dateTime.split('T')[0];
+      const s = new Date(startDk + 'T00:00:00');
+      const e = new Date(endDk + 'T00:00:00');
+      const days = Math.max(1, Math.round((e - s) / 86400000));
+
+      // Parse structured data from description
+      const desc = ev.description || '';
+      const who = (desc.match(/Who:\s*(.+)/i) || [])[1] || '';
+      const type = (desc.match(/Type:\s*(.+)/i) || [])[1] || '';
+      const location = ev.location || (desc.match(/Location:\s*(.+)/i) || [])[1] || '';
+
+      // Parse % from title
+      const pctMatch = ev.summary.match(/(\d+)\s*%/);
+      const pct = pctMatch ? parseInt(pctMatch[1], 10) : 25;
+      const level = pct >= 100 ? 4 : pct >= 75 ? 3 : pct >= 50 ? 2 : 1;
+
+      const cleanName = ev.summary.replace(/^trip ideas?\s*-\s*/i, '').replace(/\d+\s*%\s*/, '').trim();
+
+      trips.push({ summary: ev.summary, cleanName, startDk, endDk, days, who, type, location, pct, level });
+    });
+  }));
+
+  // Sort by start date
+  trips.sort((a, b) => a.startDk.localeCompare(b.startDk));
+
+  let html = '<div class="summary-container">';
+  html += '<h2>Trip Summary (' + trips.length + ' trips)</h2>';
+  html += '<table class="summary-table">';
+  html += '<thead><tr><th>%</th><th>Trip</th><th>When</th><th>Days</th><th>Where</th><th>Who</th><th>Type</th></tr></thead>';
+  html += '<tbody>';
+
+  trips.forEach(trip => {
+    const bgColor = RESERVED_COLORS[trip.level];
+    const txtColor = RESERVED_TEXT_COLORS[trip.level];
+    const startDate = new Date(trip.startDk + 'T00:00:00');
+    const endDate = new Date(trip.endDk + 'T00:00:00');
+    endDate.setDate(endDate.getDate() - 1); // exclusive end
+    const startStr = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const dateRange = trip.days === 1 ? startStr : startStr + ' – ' + endStr;
+
+    html += '<tr>';
+    html += '<td><span class="summary-pct" style="background:' + bgColor + ';color:' + txtColor + '">' + trip.pct + '%</span></td>';
+    html += '<td>' + esc(trip.cleanName) + '</td>';
+    html += '<td>' + dateRange + '</td>';
+    html += '<td>' + trip.days + '</td>';
+    html += '<td>' + esc(trip.location) + '</td>';
+    html += '<td>' + esc(trip.who) + '</td>';
+    html += '<td>' + esc(trip.type) + '</td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  mainContent.innerHTML = html;
 }

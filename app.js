@@ -2179,6 +2179,15 @@ async function renderSummaryList() {
       let phtml = '<div style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px;">Edit Trip</div>';
       phtml += '<label style="' + lbl + '">Name</label>';
       phtml += '<input id="edit-name" value="' + esc(trip.cleanName) + '" style="' + inp + '">';
+      // Dates row — same layout as Add Trip
+      phtml += '<div style="display:flex;gap:8px;">';
+      phtml += '<div style="flex:1;"><label style="' + lbl + '">Start Date</label>';
+      phtml += '<input type="date" id="edit-start" value="' + trip.startDk + '" style="' + inp + '"></div>';
+      phtml += '<div style="flex:1;"><label style="' + lbl + '">End Date</label>';
+      phtml += '<input type="date" id="edit-end" value="' + trip.endDk + '" style="' + inp + '"></div>';
+      phtml += '<div style="flex:0;min-width:40px;display:flex;align-items:flex-end;"><span id="edit-day-count" style="font-size:13px;font-weight:600;color:#555;padding:10px 0;">' + trip.days + 'd</span></div>';
+      phtml += '</div>';
+      // Location row
       phtml += '<div style="display:flex;gap:8px;">';
       phtml += '<div style="flex:1;"><label style="' + lbl + '">Country</label>';
       phtml += '<select id="edit-country" style="' + inp + '">' + editCountryOpts + '</select></div>';
@@ -2186,12 +2195,9 @@ async function renderSummaryList() {
       phtml += '<select id="edit-city" style="' + inp + '"' + (!matchedCountry ? ' disabled' : '') + '>' + editCityOpts + '</select></div>';
       phtml += '</div>';
       phtml += '<input id="edit-location-custom" value="' + esc(!matchedCountry && trip.location ? trip.location : '') + '" placeholder="City, Country" style="' + inp + 'margin-top:4px;display:' + (!matchedCountry && editCountry ? 'block' : 'none') + ';">';
-      phtml += '<div style="display:flex;gap:8px;">';
-      phtml += '<div style="flex:1;"><label style="' + lbl + '">Who</label>';
-      phtml += '<input id="edit-who" value="' + esc(trip.who) + '" style="' + inp + '"></div>';
-      phtml += '<div style="flex:1;"><label style="' + lbl + '">Dates</label>';
-      phtml += '<div style="display:flex;gap:6px;align-items:center;"><input type="date" id="edit-start" value="' + trip.startDk + '" style="' + inp + 'width:auto;flex:1;"><span style="color:#999;">→</span><input type="date" id="edit-end" value="' + trip.endDk + '" style="' + inp + 'width:auto;flex:1;"><span id="edit-day-count" style="font-size:12px;font-weight:600;color:#555;">' + trip.days + 'd</span></div></div>';
-      phtml += '</div>';
+      // Who — own row
+      phtml += '<label style="' + lbl + '">Who (optional)</label>';
+      phtml += '<input id="edit-who" value="' + esc(trip.who) + '" style="' + inp + '">';
       phtml += '<label style="' + lbl + '">Type</label>';
       phtml += '<div style="display:flex;gap:4px;flex-wrap:wrap;" id="edit-type-btns">';
       TRIP_TYPES.forEach(t => {

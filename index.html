@@ -979,12 +979,101 @@ body {
 }
 
 @media (max-width: 600px) {
+  /* Header: wrap buttons, smaller text */
+  .header {
+    flex-wrap: wrap;
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  .header-left {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .header h1 { font-size: 14px; }
+  .header-right {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .nav-btn, #auth-btn, #columns-toggle, #settings-toggle, #legend-toggle, #summary-btn, #add-trip-btn {
+    font-size: 10px !important;
+    padding: 4px 8px !important;
+  }
+
+  /* Grid: horizontal scroll, full width */
+  .grid-container {
+    padding: 4px 0;
+  }
+  .month-grid {
+    font-size: 11px;
+  }
+  .month-grid td, .month-grid th {
+    padding: 2px 3px;
+  }
+  .month-grid thead tr.header-row {
+    height: 60px;
+  }
+
+  /* Gantt: smaller labels */
+  .gantt-container {
+    padding: 4px 0;
+  }
+  .gantt-label-col, .gantt-row-label {
+    min-width: 120px !important;
+    max-width: 120px !important;
+    font-size: 10px;
+    padding: 3px 4px;
+  }
+  .gantt-day-header {
+    font-size: 7px;
+    min-width: 16px;
+  }
+  .gantt-cell {
+    min-width: 16px;
+  }
+  .gantt-bar {
+    font-size: 5px;
+  }
+
+  /* Trip form */
   .trip-form { margin: 8px; padding: 12px; }
   .trip-form .form-row { flex-direction: column; gap: 0; }
+  .trip-form input, .trip-form select, .trip-form textarea {
+    font-size: 16px; /* prevents zoom on iOS */
+  }
+
+  /* Summary */
   .summary-container { padding: 8px; }
   .summary-header { flex-direction: column; gap: 8px; align-items: flex-start; }
   .summary-card-body { padding: 8px 10px; }
   .summary-card-title { font-size: 13px; }
+  .summary-card-meta { font-size: 10px; }
+  .summary-filters { gap: 4px; }
+  .summary-filter-btn { font-size: 10px; padding: 3px 8px; }
+
+  /* Sign-in prompt */
+  .sign-in-prompt {
+    padding: 30px 16px;
+  }
+  .sign-in-prompt h2 { font-size: 22px; }
+  .sign-in-prompt p { font-size: 13px; }
+
+  /* Edit popup */
+  #trip-edit-popup {
+    width: 95vw !important;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+
+  /* Legend */
+  .legend {
+    padding: 4px 10px;
+    font-size: 10px;
+  }
+
+  /* Settings panels */
+  .settings-panel {
+    padding: 8px 10px;
+  }
 }
 
 /* Print styles */
@@ -1073,8 +1162,8 @@ body {
 <div class="legend" id="legend"></div>
 <div class="tooltip" id="tooltip"></div>
 
-<script src="config.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="config.js?v=6"></script>
+<script src="app.js?v=6"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>

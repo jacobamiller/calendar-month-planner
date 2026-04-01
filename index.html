@@ -1031,7 +1031,7 @@ body {
     <h1 id="month-title"></h1>
     <button class="nav-btn" id="next-btn">&rarr;</button>
     <button class="today-btn" id="today-btn">Today</button>
-    <button class="nav-btn" id="view-toggle" style="font-weight:600;">Gantt View</button>
+    <button class="nav-btn" id="view-toggle" style="font-weight:600;"></button>
     <button class="nav-btn" id="add-trip-btn" style="font-weight:600;background:#28a745;color:#fff;border-color:#28a745;">+ Trip</button>
     <button class="nav-btn" id="summary-btn" style="font-size:11px;">Summary</button>
     <button class="nav-btn" id="legend-toggle" style="font-size:11px;">Key</button>
@@ -1053,6 +1053,14 @@ body {
 <div class="settings-panel" id="settings-panel">
   <h3>Select calendars to display as columns:</h3>
   <div class="calendar-checkboxes" id="calendar-checkboxes"></div>
+  <div style="margin-top:10px;padding-top:8px;border-top:1px solid #eee;">
+    <label style="font-size:12px;font-weight:600;">Default View: </label>
+    <select id="default-view-select" style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;">
+      <option value="grid">Month View</option>
+      <option value="gantt">Gantt View</option>
+      <option value="summary">Summary</option>
+    </select>
+  </div>
 </div>
 
 <div id="main-content">

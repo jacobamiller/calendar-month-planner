@@ -2190,7 +2190,7 @@ async function renderSummaryList() {
       phtml += '<div style="flex:1;"><label style="' + lbl + '">Who</label>';
       phtml += '<input id="edit-who" value="' + esc(trip.who) + '" style="' + inp + '"></div>';
       phtml += '<div style="flex:1;"><label style="' + lbl + '">Dates</label>';
-      phtml += '<div style="font-size:12px;padding:8px 0;color:#555;">' + trip.startDk + ' → ' + trip.endDk + ' (' + trip.days + 'd)</div></div>';
+      phtml += '<div style="display:flex;gap:6px;align-items:center;"><input type="date" id="edit-start" value="' + trip.startDk + '" style="' + inp + 'width:auto;flex:1;"><span style="color:#999;">→</span><input type="date" id="edit-end" value="' + trip.endDk + '" style="' + inp + 'width:auto;flex:1;"><span id="edit-day-count" style="font-size:12px;font-weight:600;color:#555;">' + trip.days + 'd</span></div></div>';
       phtml += '</div>';
       phtml += '<label style="' + lbl + '">Type</label>';
       phtml += '<div style="display:flex;gap:4px;flex-wrap:wrap;" id="edit-type-btns">';
@@ -2294,6 +2294,21 @@ async function renderSummaryList() {
         else { editLocCustom.style.display = 'none'; }
       };
 
+      // Date change — update day count
+      const editStart = popup.querySelector('#edit-start');
+      const editEnd = popup.querySelector('#edit-end');
+      const editDayCount = popup.querySelector('#edit-day-count');
+      function updateEditDayCount() {
+        if (editStart.value && editEnd.value) {
+          const s = new Date(editStart.value + 'T00:00:00');
+          const e = new Date(editEnd.value + 'T00:00:00');
+          const d = Math.max(1, Math.round((e - s) / 86400000));
+          editDayCount.textContent = d + 'd';
+        }
+      }
+      editStart.onchange = updateEditDayCount;
+      editEnd.onchange = updateEditDayCount;
+
       // Type buttons in edit
       let editSelectedType = trip.type;
       const editTypeCustom = popup.querySelector('#edit-type-custom');
@@ -2372,7 +2387,13 @@ async function renderSummaryList() {
             {
               method: 'PATCH',
               headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ summary: newSummary, description: newDesc, location: newLocation }),
+              body: JSON.stringify({
+                summary: newSummary,
+                description: newDesc,
+                location: newLocation,
+                start: { date: editStart.value },
+                end: { date: (function() { const e = new Date(editEnd.value + 'T00:00:00'); e.setDate(e.getDate() + 1); return e.toISOString().split('T')[0]; })() },
+              }),
             }
           );
           if (resp.ok) {

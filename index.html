@@ -108,7 +108,7 @@ body {
   margin-bottom: 8px;
 }
 
-.calendar-checkboxes {
+.calendar-checkboxes, #column-checkboxes {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 16px;
@@ -1136,19 +1136,21 @@ body {
 
 <div class="settings-panel" id="columns-panel">
   <h3>Show/hide and reorder columns:</h3>
-  <div id="column-checkboxes" style="display:flex;flex-direction:column;gap:2px;max-height:300px;overflow-y:auto;"></div>
+  <div id="column-checkboxes" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:2px 12px;max-height:300px;overflow-y:auto;"></div>
 </div>
 
 <div class="settings-panel" id="settings-panel">
   <h3>Select calendars to display as columns:</h3>
   <div class="calendar-checkboxes" id="calendar-checkboxes"></div>
-  <div style="margin-top:10px;padding-top:8px;border-top:1px solid #eee;">
-    <label style="font-size:12px;font-weight:600;">Default View: </label>
-    <select id="default-view-select" style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;">
-      <option value="grid">Month View</option>
-      <option value="gantt">Gantt View</option>
-      <option value="summary">Summary</option>
-    </select>
+  <div style="margin-top:10px;padding-top:8px;border-top:1px solid #eee;display:flex;gap:12px;align-items:center;">
+    <div>
+      <label style="font-size:12px;font-weight:600;">Default View: </label>
+      <select id="default-view-select" style="padding:4px 8px;border:1px solid #ccc;border-radius:4px;font-size:12px;">
+        <option value="grid">Month View</option>
+        <option value="gantt">Gantt View</option>
+        <option value="summary">Summary</option>
+      </select>
+    </div>
   </div>
 </div>
 
@@ -1162,8 +1164,8 @@ body {
 <div class="legend" id="legend"></div>
 <div class="tooltip" id="tooltip"></div>
 
-<script src="config.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.js?v=9"></script>
+<script src="app.js?v=9"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>

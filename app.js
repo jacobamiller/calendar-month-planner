@@ -1319,7 +1319,7 @@ function renderGantt(tripEvents, startDate, endDate, today, ganttHolidays) {
 
   // Reserved row (highest % per day across all trips)
   if (!hiddenColumns.has('col_reserved')) {
-  html += '<div class="gantt-row">';
+  html += '<div class="gantt-row" style="min-height:28px;">';
   html += '<div class="gantt-row-label section-label">Reserved</div>';
   html += '<div class="gantt-row-timeline">';
   days.forEach(day => {
@@ -1355,12 +1355,21 @@ function renderGantt(tripEvents, startDate, endDate, today, ganttHolidays) {
       html += '<div class="gantt-row holiday-row">';
       html += '<div class="gantt-row-label section-label">' + esc(cc.name) + '</div>';
       html += '<div class="gantt-row-timeline">';
-      days.forEach(day => {
+      days.forEach((day, dayIdx) => {
         const dk = dateKey(day);
         const dow = day.getDay();
         const names = holidays[dk];
         if (names && names.length > 0) {
-          html += '<div class="gantt-cell' + (dow===0||dow===6 ? ' weekend' : '') + '" title="' + esc(names.join(', ')) + '"><div class="gantt-holiday-dot"></div></div>';
+          // Check prev/next day for any holiday in this country to merge into one visual bar
+          const prevDk = dayIdx > 0 ? dateKey(days[dayIdx - 1]) : null;
+          const nextDk = dayIdx < days.length - 1 ? dateKey(days[dayIdx + 1]) : null;
+          const hasPrev = prevDk && holidays[prevDk] && holidays[prevDk].length > 0;
+          const hasNext = nextDk && holidays[nextDk] && holidays[nextDk].length > 0;
+          let dotCls = 'gantt-holiday-dot';
+          if (!hasPrev && !hasNext) dotCls += ' gantt-holiday-single';
+          else if (!hasPrev) dotCls += ' gantt-holiday-first';
+          else if (!hasNext) dotCls += ' gantt-holiday-last';
+          html += '<div class="gantt-cell' + (dow===0||dow===6 ? ' weekend' : '') + '" title="' + esc(names.join(', ')) + '"><div class="' + dotCls + '"></div></div>';
         } else {
           html += '<div class="gantt-cell' + (dow===0||dow===6 ? ' weekend' : '') + '"></div>';
         }

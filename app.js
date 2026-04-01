@@ -117,7 +117,13 @@ function initAuth() {
     client_id: CLIENT_ID,
     scope: SCOPES,
     callback: onTokenResponse,
+    prompt: '',  // Don't prompt if already authorized — silent re-auth
   });
+  // Auto sign-in if user was previously authenticated
+  const wasSignedIn = localStorage.getItem('mp_wasSignedIn');
+  if (wasSignedIn === '1') {
+    tokenClient.requestAccessToken({ prompt: '' });
+  }
   authBtn.onclick = () => {
     if (accessToken) {
       signOut();
@@ -136,6 +142,13 @@ function onTokenResponse(resp) {
   authBtn.textContent = 'Sign out';
   signInPrompt.style.display = 'none';
   resyncBtn.style.display = 'inline-block';
+  localStorage.setItem('mp_wasSignedIn', '1');
+  // Auto-refresh token before it expires (tokens last ~3600s, refresh at 3000s)
+  if (resp.expires_in) {
+    setTimeout(() => {
+      tokenClient.requestAccessToken({ prompt: '' });
+    }, (resp.expires_in - 300) * 1000);
+  }
   fetchCalendars();
 }
 
@@ -154,6 +167,7 @@ function signOut() {
   updateSyncStatus('');
   authBtn.textContent = 'Sign in with Google';
   resyncBtn.style.display = 'none';
+  localStorage.removeItem('mp_wasSignedIn');
   settingsPanel.classList.remove('open');
   calendarCheckboxes.innerHTML = '';
   legendEl.innerHTML = '';

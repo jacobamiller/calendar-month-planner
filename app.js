@@ -10,7 +10,7 @@ let tripIdeaDates = {};       // "YYYY-MM-DD" → true (auto-detected from event
 let syncCalId = null;         // ID of the "Month Planner Sync" calendar
 let syncEventIds = {};        // "YYYY-MM-DD" → event ID on the sync calendar
 let syncReady = false;        // true once sync calendar is found/created
-let currentView = 'grid';    // 'grid', 'gantt', 'addtrip', 'summary'
+let currentView = localStorage.getItem('mp_defaultView') || 'grid'; // 'grid', 'gantt', 'addtrip', 'summary'
 
 function reloadView() {
   if (currentView === 'gantt') loadGantt();
@@ -466,11 +466,15 @@ resyncBtn.onclick = async () => {
 
 // View toggle
 const viewToggle = document.getElementById('view-toggle');
+function updateViewToggleLabel() {
+  viewToggle.textContent = currentView === 'grid' ? 'Gantt View' : 'Month View';
+}
+updateViewToggleLabel();
 viewToggle.onclick = () => {
   const views = ['grid', 'gantt'];
   const idx = views.indexOf(currentView);
   currentView = views[(idx + 1) % views.length];
-  viewToggle.textContent = currentView === 'grid' ? 'Gantt View' : 'Month View';
+  updateViewToggleLabel();
   if (accessToken) reloadView();
 };
 
@@ -484,6 +488,13 @@ document.getElementById('add-trip-btn').onclick = () => {
 document.getElementById('summary-btn').onclick = () => {
   currentView = 'summary';
   if (accessToken) renderSummaryList();
+};
+
+// Default view setting
+const defaultViewSelect = document.getElementById('default-view-select');
+defaultViewSelect.value = localStorage.getItem('mp_defaultView') || 'grid';
+defaultViewSelect.onchange = () => {
+  localStorage.setItem('mp_defaultView', defaultViewSelect.value);
 };
 
 // Legend toggle
@@ -2013,27 +2024,74 @@ async function renderSummaryList() {
       popup.id = 'trip-edit-popup';
       popup.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #ccc;border-radius:12px;padding:16px 20px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,0.2);z-index:200;width:360px;max-width:90vw;';
 
-      let phtml = '<div style="font-weight:700;font-size:15px;margin-bottom:10px;">' + esc(trip.cleanName) + '</div>';
-      phtml += '<div style="color:#666;font-size:12px;margin-bottom:6px;">' + trip.startDk + ' to ' + trip.endDk + ' (' + trip.days + ' days)</div>';
-      if (trip.location) phtml += '<div style="color:#666;font-size:12px;">Location: ' + esc(trip.location) + '</div>';
-      if (trip.who) phtml += '<div style="color:#666;font-size:12px;">Who: ' + esc(trip.who) + '</div>';
-      if (trip.type) phtml += '<div style="color:#666;font-size:12px;">Type: ' + esc(trip.type) + '</div>';
-      if (trip.notes) phtml += '<div style="color:#666;font-size:12px;margin-top:4px;">Notes: ' + esc(trip.notes) + '</div>';
+      // Build trip key for per-day % lookup
+      const tripKey = trip.cleanName.substring(0, 40);
 
-      // % buttons
-      phtml += '<div style="margin-top:12px;font-size:11px;font-weight:600;color:#888;">CHANGE LIKELIHOOD</div>';
-      phtml += '<div style="display:flex;gap:6px;margin-top:6px;">';
+      // Editable fields
+      let phtml = '<div style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px;">Edit Trip</div>';
+      phtml += '<label style="display:block;font-size:10px;color:#888;margin:8px 0 2px;">Name</label>';
+      phtml += '<input id="edit-name" value="' + esc(trip.cleanName) + '" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;">';
+      phtml += '<div style="display:flex;gap:8px;">';
+      phtml += '<div style="flex:1;"><label style="display:block;font-size:10px;color:#888;margin:6px 0 2px;">Location</label>';
+      phtml += '<input id="edit-location" value="' + esc(trip.location) + '" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;"></div>';
+      phtml += '<div style="flex:1;"><label style="display:block;font-size:10px;color:#888;margin:6px 0 2px;">Who</label>';
+      phtml += '<input id="edit-who" value="' + esc(trip.who) + '" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;"></div>';
+      phtml += '</div>';
+      phtml += '<div style="display:flex;gap:8px;">';
+      phtml += '<div style="flex:1;"><label style="display:block;font-size:10px;color:#888;margin:6px 0 2px;">Type</label>';
+      phtml += '<select id="edit-type" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px;">';
+      TRIP_TYPES.forEach(t => { phtml += '<option' + (t === trip.type ? ' selected' : '') + '>' + esc(t) + '</option>'; });
+      phtml += '</select></div>';
+      phtml += '<div style="flex:1;"><label style="display:block;font-size:10px;color:#888;margin:6px 0 2px;">Dates</label>';
+      phtml += '<div style="font-size:12px;padding:8px 0;color:#555;">' + trip.startDk + ' → ' + trip.endDk + ' (' + trip.days + 'd)</div></div>';
+      phtml += '</div>';
+      phtml += '<label style="display:block;font-size:10px;color:#888;margin:6px 0 2px;">Notes</label>';
+      phtml += '<textarea id="edit-notes" style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px;height:40px;resize:vertical;">' + esc(trip.notes) + '</textarea>';
+
+      // Overall likelihood
+      phtml += '<label style="display:block;font-size:10px;color:#888;margin:8px 0 4px;">Overall Likelihood</label>';
+      phtml += '<div style="display:flex;gap:4px;" id="edit-overall-pct">';
       [25, 50, 75, 100].forEach(p => {
         const lvl = p >= 100 ? 4 : p >= 75 ? 3 : p >= 50 ? 2 : 1;
         const active = trip.pct === p ? 'outline:2px solid #333;' : '';
-        phtml += '<button class="edit-pct-btn" data-pct="' + p + '" style="flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;background:' + RESERVED_COLORS[lvl] + ';color:' + RESERVED_TEXT_COLORS[lvl] + ';' + active + '">' + p + '%</button>';
+        phtml += '<button class="edit-overall-btn" data-pct="' + p + '" style="flex:1;padding:6px;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;background:' + RESERVED_COLORS[lvl] + ';color:' + RESERVED_TEXT_COLORS[lvl] + ';' + active + '">' + p + '%</button>';
       });
       phtml += '</div>';
 
-      phtml += '<div style="display:flex;gap:8px;margin-top:14px;">';
-      phtml += '<button id="edit-close" style="flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;cursor:pointer;background:#fff;font-size:12px;">Close</button>';
-      phtml += '<button id="edit-gantt" style="flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;background:#0a66c2;color:#fff;font-size:12px;">View in Gantt</button>';
+      // Per-day likelihood
+      phtml += '<label style="display:block;font-size:10px;color:#888;margin:8px 0 4px;">Per-Day Likelihood</label>';
+      phtml += '<div style="max-height:150px;overflow-y:auto;border:1px solid #eee;border-radius:6px;padding:4px;">';
+      const dayStart = new Date(trip.startDk + 'T00:00:00');
+      const dayEnd = new Date(trip.endDk + 'T00:00:00');
+      const dayNames2 = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const dc = new Date(dayStart);
+      let dayCount = 0;
+      while (dc < dayEnd) {
+        const dk2 = dateKey(dc);
+        const stored = localStorage.getItem('mp_trip_pct_' + dk2 + '_' + tripKey);
+        const dayLvl = stored !== null ? parseInt(stored, 10) : trip.level;
+        const dayPct = Math.round(RESERVED_LEVELS[dayLvl] * 100);
+        const dateStr = dayNames2[dc.getDay()] + ' ' + dc.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+        phtml += '<div style="display:flex;align-items:center;gap:4px;padding:2px 4px;' + (dayCount % 2 ? 'background:#fafafa;' : '') + 'border-radius:4px;" data-day-dk="' + dk2 + '">';
+        phtml += '<span style="font-size:11px;min-width:75px;color:#555;">' + dateStr + '</span>';
+        [25, 50, 75, 100].forEach(p => {
+          const lvl2 = p >= 100 ? 4 : p >= 75 ? 3 : p >= 50 ? 2 : 1;
+          const isActive = dayPct === p;
+          phtml += '<button class="day-pct-btn" data-dk="' + dk2 + '" data-pct="' + p + '" style="width:32px;padding:3px 0;border:' + (isActive ? '2px solid #333' : '1px solid #ddd') + ';border-radius:4px;cursor:pointer;font-size:9px;font-weight:600;background:' + RESERVED_COLORS[lvl2] + ';color:' + RESERVED_TEXT_COLORS[lvl2] + ';">' + p + '%</button>';
+        });
+        phtml += '</div>';
+        dc.setDate(dc.getDate() + 1);
+        dayCount++;
+      }
       phtml += '</div>';
+
+      // Action buttons
+      phtml += '<div style="display:flex;gap:8px;margin-top:12px;">';
+      phtml += '<button id="edit-save" style="flex:2;padding:8px;border:none;border-radius:6px;cursor:pointer;background:#28a745;color:#fff;font-size:13px;font-weight:600;">Save Changes</button>';
+      phtml += '<button id="edit-gantt" style="flex:1;padding:8px;border:none;border-radius:6px;cursor:pointer;background:#0a66c2;color:#fff;font-size:12px;">Gantt</button>';
+      phtml += '<button id="edit-close" style="flex:1;padding:8px;border:1px solid #ccc;border-radius:6px;cursor:pointer;background:#fff;font-size:12px;">Close</button>';
+      phtml += '</div>';
+      phtml += '<div id="edit-status" style="text-align:center;font-size:11px;margin-top:6px;"></div>';
 
       popup.innerHTML = phtml;
       document.body.appendChild(popup);
@@ -2054,35 +2112,77 @@ async function renderSummaryList() {
         loadGantt();
       };
 
-      // % change buttons — update Google Calendar event title
-      popup.querySelectorAll('.edit-pct-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const newPct = parseInt(btn.dataset.pct, 10);
-          const newSummary = 'Trip Ideas - ' + newPct + '% ' + trip.cleanName;
-          const calId = trip.calId || tripIdeasCalId;
-
-          btn.textContent = '...';
-          try {
-            const resp = await fetch(
-              'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(calId) + '/events/' + encodeURIComponent(trip.eventId),
-              {
-                method: 'PATCH',
-                headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ summary: newSummary }),
-              }
-            );
-            if (resp.ok) {
-              eventsCache = {};
-              closePopup();
-              renderSummaryList();
-            } else {
-              btn.textContent = 'Error';
-            }
-          } catch(err) {
-            btn.textContent = 'Error';
-          }
+      // Overall % buttons — highlight selected
+      popup.querySelectorAll('.edit-overall-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          popup.querySelectorAll('.edit-overall-btn').forEach(b => b.style.outline = '');
+          btn.style.outline = '2px solid #333';
         });
       });
+
+      // Per-day % buttons — save to localStorage immediately
+      popup.querySelectorAll('.day-pct-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const dk2 = btn.dataset.dk;
+          const p = parseInt(btn.dataset.pct, 10);
+          const lvl2 = p >= 100 ? 4 : p >= 75 ? 3 : p >= 50 ? 2 : 1;
+          localStorage.setItem('mp_trip_pct_' + dk2 + '_' + tripKey, lvl2);
+          // Update button styles in this row
+          const row = btn.closest('[data-day-dk]');
+          row.querySelectorAll('.day-pct-btn').forEach(b => b.style.border = '1px solid #ddd');
+          btn.style.border = '2px solid #333';
+        });
+      });
+
+      // Save button — update Google Calendar event
+      popup.querySelector('#edit-save').onclick = async () => {
+        const newName = popup.querySelector('#edit-name').value.trim();
+        const newLocation = popup.querySelector('#edit-location').value.trim();
+        const newWho = popup.querySelector('#edit-who').value.trim();
+        const newType = popup.querySelector('#edit-type').value;
+        const newNotes = popup.querySelector('#edit-notes').value.trim();
+        const statusEl = popup.querySelector('#edit-status');
+
+        // Get selected overall %
+        let newPct = trip.pct;
+        const activeBtn = popup.querySelector('.edit-overall-btn[style*="2px solid"]');
+        if (activeBtn) newPct = parseInt(activeBtn.dataset.pct, 10);
+
+        const newSummary = 'Trip Ideas - ' + newPct + '% ' + newName;
+        let newDesc = '';
+        if (newWho) newDesc += 'Who: ' + newWho + '\n';
+        newDesc += 'Type: ' + newType + '\n';
+        if (newLocation) newDesc += 'Location: ' + newLocation + '\n';
+        newDesc += 'Likelihood: ' + newPct + '%\n';
+        if (newNotes) newDesc += 'Notes: ' + newNotes;
+
+        const calId = trip.calId || tripIdeasCalId;
+        statusEl.textContent = 'Saving...';
+        statusEl.style.color = '#0a66c2';
+
+        try {
+          const resp = await fetch(
+            'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(calId) + '/events/' + encodeURIComponent(trip.eventId),
+            {
+              method: 'PATCH',
+              headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ summary: newSummary, description: newDesc, location: newLocation }),
+            }
+          );
+          if (resp.ok) {
+            eventsCache = {};
+            statusEl.textContent = 'Saved!';
+            statusEl.style.color = '#28a745';
+            setTimeout(() => { closePopup(); renderSummaryList(); }, 500);
+          } else {
+            statusEl.textContent = 'Error saving';
+            statusEl.style.color = '#dc3545';
+          }
+        } catch(err) {
+          statusEl.textContent = 'Error: ' + err.message;
+          statusEl.style.color = '#dc3545';
+        }
+      };
     });
   });
 

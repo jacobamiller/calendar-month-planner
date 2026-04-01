@@ -1126,6 +1126,12 @@ body {
     <button class="nav-btn" id="legend-toggle" style="font-size:11px;">Key</button>
   </div>
   <div class="header-right">
+    <select id="default-view-header" style="padding:4px 6px;border:1px solid #ccc;border-radius:4px;font-size:11px;">
+      <option value="grid">Open: Month</option>
+      <option value="gantt">Open: Gantt</option>
+      <option value="summary">Open: Summary</option>
+      <option value="addtrip">Open: Add Trip</option>
+    </select>
     <button id="columns-toggle">Columns</button>
     <button id="settings-toggle">Calendars</button>
     <button id="resync-btn" class="nav-btn" style="font-size:11px;display:none;">Re-sync All</button>
@@ -1149,6 +1155,7 @@ body {
         <option value="grid">Month View</option>
         <option value="gantt">Gantt View</option>
         <option value="summary">Summary</option>
+        <option value="addtrip">Add Trip</option>
       </select>
     </div>
   </div>
@@ -1164,8 +1171,8 @@ body {
 <div class="legend" id="legend"></div>
 <div class="tooltip" id="tooltip"></div>
 
-<script src="config.js?v=9"></script>
-<script src="app.js?v=9"></script>
+<script src="config.js?v=10"></script>
+<script src="app.js?v=10"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>

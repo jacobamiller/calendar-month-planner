@@ -764,6 +764,133 @@ body {
   z-index: 1;
 }
 
+/* Add Trip Form */
+.trip-form {
+  max-width: 500px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.trip-form h2 {
+  font-size: 18px;
+  margin-bottom: 16px;
+}
+
+.trip-form label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  margin: 10px 0 3px;
+}
+
+.trip-form input, .trip-form select, .trip-form textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.trip-form textarea {
+  height: 60px;
+  resize: vertical;
+}
+
+.trip-form .form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.trip-form .form-row > div {
+  flex: 1;
+}
+
+.trip-form .type-btns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.trip-form .type-btn {
+  padding: 6px 12px;
+  border: 1px solid #ccc;
+  border-radius: 16px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.trip-form .type-btn.active {
+  background: #0a66c2;
+  color: #fff;
+  border-color: #0a66c2;
+}
+
+.trip-form .submit-btn {
+  width: 100%;
+  padding: 10px;
+  background: #28a745;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 16px;
+}
+
+.trip-form .submit-btn:hover { background: #218838; }
+.trip-form .submit-btn:disabled { background: #ccc; cursor: not-allowed; }
+
+.trip-form .form-status {
+  text-align: center;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* Summary List */
+.summary-container {
+  padding: 10px 20px;
+}
+
+.summary-container h2 {
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.summary-table th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 2px solid #ddd;
+  font-size: 11px;
+  color: #666;
+  text-transform: uppercase;
+}
+
+.summary-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f0f0;
+  vertical-align: top;
+}
+
+.summary-table tr:hover { background: #f9f9f9; }
+
+.summary-pct {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
 /* Print styles */
 @media print {
   .header, .settings-panel, .legend, #auth-btn, #settings-toggle, .today-btn {
@@ -809,6 +936,8 @@ body {
     <button class="nav-btn" id="next-btn">&rarr;</button>
     <button class="today-btn" id="today-btn">Today</button>
     <button class="nav-btn" id="view-toggle" style="font-weight:600;">Gantt View</button>
+    <button class="nav-btn" id="add-trip-btn" style="font-weight:600;background:#28a745;color:#fff;border-color:#28a745;">+ Trip</button>
+    <button class="nav-btn" id="summary-btn" style="font-size:11px;">Summary</button>
     <button class="nav-btn" id="legend-toggle" style="font-size:11px;">Key</button>
   </div>
   <div class="header-right">
